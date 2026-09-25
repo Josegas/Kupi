@@ -1,6 +1,7 @@
 @import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap");
 @import "tailwindcss";
 
+/* ── Paleta A: Día claro (default) ───────────────────────────── */
 :root {
   --bg: #F5F5F3;
   --surface: #FFFFFF;
@@ -12,6 +13,23 @@
   --brand-tint: #FCE8DC;
   --savings: #15803D;
   --savings-tint: #EAF6EE;
+
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+}
+
+/* ── Paleta B: Noche de antojo ────────────────────────────────── */
+[data-theme="noche"] {
+  --bg: #111318;
+  --surface: #1C2028;
+  --border: #2A2F3A;
+  --text-primary: #F1F5F9;
+  --text-secondary: #94A3B8;
+  --text-muted: #64748B;
+  --brand: #F97316;
+  --brand-tint: #1C1509;
+  --savings: #22C55E;
+  --savings-tint: #0A1F0F;
 }
 
 @theme inline {
@@ -33,26 +51,139 @@ body {
   background: var(--bg);
   color: var(--text-primary);
   font-family: var(--font-body);
+  transition: background 300ms var(--ease-out), color 200ms var(--ease-out);
 }
 
+/* ── Tarjetas ─────────────────────────────────────────────────── */
 .kupi-card {
-  transition: transform 0.18s ease, box-shadow 0.18s ease;
+  transition: transform 180ms var(--ease-out), box-shadow 180ms var(--ease-out);
 }
-.kupi-card:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 12px 28px rgba(31, 35, 35, 0.10);
+
+@media (hover: hover) and (pointer: fine) {
+  .kupi-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.12);
+  }
 }
+
+.kupi-card:active {
+  transform: scale(0.98);
+  transition-duration: 100ms;
+}
+
+/* ── Botones CTA ──────────────────────────────────────────────── */
 .kupi-btn {
-  transition: transform 0.15s ease, filter 0.15s ease;
+  transition: transform 160ms var(--ease-out);
 }
-.kupi-btn:hover {
-  transform: translateY(-1px);
-  filter: brightness(1.06);
+
+.kupi-btn:active {
+  transform: scale(0.97);
+  transition-duration: 100ms;
 }
+
+/* ── Input de búsqueda ────────────────────────────────────────── */
+.kupi-input {
+  transition: border-color 160ms var(--ease-out), box-shadow 160ms var(--ease-out);
+}
+
 .kupi-input:focus-within {
   border-color: var(--brand);
   box-shadow: 0 0 0 3px rgba(194, 65, 12, 0.14);
 }
-.kupi-link:hover {
-  color: var(--brand);
+
+[data-theme="noche"] .kupi-input:focus-within {
+  box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.20);
+}
+
+/* ── Links ────────────────────────────────────────────────────── */
+.kupi-link {
+  transition: color 140ms var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .kupi-link:hover {
+    color: var(--brand);
+  }
+}
+
+/* ── Keyframes ────────────────────────────────────────────────── */
+@keyframes fadeUp {
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeIn {
+  to { opacity: 1; }
+}
+
+@keyframes badgePop {
+  0%   { transform: scale(0.7); opacity: 0; }
+  65%  { transform: scale(1.08); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* ── Entrada orquestada en página de inicio ───────────────────── */
+.hero-title {
+  opacity: 0;
+  transform: translateY(10px);
+  animation: fadeUp 400ms var(--ease-out) forwards;
+  animation-delay: 0ms;
+}
+
+.hero-subtitle {
+  opacity: 0;
+  transform: translateY(8px);
+  animation: fadeUp 380ms var(--ease-out) forwards;
+  animation-delay: 80ms;
+}
+
+.hero-chips {
+  opacity: 0;
+  animation: fadeIn 300ms var(--ease-out) forwards;
+  animation-delay: 160ms;
+}
+
+/* Tarjetas del grid con stagger — base 220ms para que lleguen después del hero */
+.stagger-item {
+  opacity: 0;
+  transform: translateY(10px);
+  animation: fadeUp 350ms var(--ease-out) forwards;
+}
+
+.stagger-item:nth-child(1) { animation-delay: 220ms; }
+.stagger-item:nth-child(2) { animation-delay: 270ms; }
+.stagger-item:nth-child(3) { animation-delay: 320ms; }
+.stagger-item:nth-child(4) { animation-delay: 370ms; }
+.stagger-item:nth-child(5) { animation-delay: 420ms; }
+.stagger-item:nth-child(6) { animation-delay: 470ms; }
+
+/* ── Entrada orquestada en página de comparación ─────────────── */
+.compare-card {
+  opacity: 0;
+  transform: translateY(12px) scale(0.98);
+  animation: fadeUp 360ms var(--ease-out) forwards;
+}
+
+.compare-card:nth-child(1) { animation-delay: 80ms; }
+.compare-card:nth-child(2) { animation-delay: 160ms; }
+.compare-card:nth-child(3) { animation-delay: 240ms; }
+
+/* Badge "Más barato" aparece después de que llegaron las cards */
+.badge-cheapest {
+  display: inline-block;
+  opacity: 0;
+  animation: badgePop 380ms var(--ease-out) forwards;
+  animation-delay: 500ms;
+}
+
+/* ── Prefers-reduced-motion ───────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .kupi-card, .kupi-btn, .kupi-input, .kupi-link, body {
+    transition: none;
+  }
+  .stagger-item, .hero-title, .hero-subtitle, .hero-chips,
+  .compare-card, .badge-cheapest {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
 }

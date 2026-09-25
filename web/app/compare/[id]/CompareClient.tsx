@@ -32,7 +32,7 @@ export default function CompareClient() {
       <div className="max-w-6xl mx-auto px-12 py-10">
         <div className="flex flex-col lg:flex-row gap-10">
 
-          {/* Panel izquierdo — producto */}
+          {/* Panel izquierdo: producto */}
           <div className="lg:w-72 shrink-0">
             <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl overflow-hidden">
               <div className="h-48 bg-[var(--bg)] flex items-center justify-center text-[var(--text-muted)] text-sm">
@@ -49,7 +49,7 @@ export default function CompareClient() {
             </div>
           </div>
 
-          {/* Panel derecho — comparación */}
+          {/* Panel derecho: comparación */}
           <div className="flex-1">
             <h3
               className="text-[16px] font-semibold text-[var(--text-secondary)] mb-5"

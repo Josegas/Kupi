@@ -36,7 +36,7 @@ export default function PlatformCompareCard({
   return (
     <div
       onClick={onSelect}
-      className={`kupi-card cursor-pointer rounded-2xl border p-5 flex flex-col gap-4 ${
+      className={`compare-card kupi-card cursor-pointer rounded-2xl border p-5 flex flex-col gap-4 transition-colors duration-300 ${
         isCheapest
           ? "bg-[var(--savings-tint)] border-[var(--savings)] border-[1.5px]"
           : "bg-[var(--surface)] border-[var(--border)]"
@@ -57,7 +57,7 @@ export default function PlatformCompareCard({
           )}
         </div>
         {isCheapest && (
-          <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-[var(--savings)] text-white">
+          <span className="badge-cheapest text-[11px] font-bold px-2.5 py-1 rounded-full bg-[var(--savings)] text-white">
             Más barato
           </span>
         )}

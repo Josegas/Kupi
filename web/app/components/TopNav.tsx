@@ -1,16 +1,13 @@
 import { Search, MapPin } from "lucide-react";
+import KupiLogo from "./KupiLogo";
+import ThemeToggle from "./ThemeToggle";
 
 export default function TopNav() {
   return (
-    <nav className="bg-[var(--surface)] border-b border-[var(--border)] sticky top-0 z-10">
-      <div className="max-w-6xl mx-auto px-12 h-16 flex items-center gap-6">
+    <nav className="bg-[var(--surface)] border-b border-[var(--border)] sticky top-0 z-10 transition-colors duration-300">
+      <div className="max-w-6xl mx-auto px-12 h-20 flex items-center gap-6">
         {/* Logo */}
-        <span
-          className="text-2xl font-bold tracking-tight shrink-0"
-          style={{ fontFamily: "var(--font-display)", color: "var(--brand)", letterSpacing: "-0.03em" }}
-        >
-          Kupi
-        </span>
+        <KupiLogo size={40} />
 
         {/* Buscador */}
         <div className="kupi-input flex-1 flex items-center gap-2 border border-[var(--border)] rounded-xl px-4 h-10 bg-[var(--bg)]">
@@ -23,10 +20,13 @@ export default function TopNav() {
         </div>
 
         {/* Ubicación */}
-        <button className="kupi-link flex items-center gap-1.5 text-sm font-medium text-[var(--text-primary)] shrink-0 transition-colors">
+        <button className="kupi-link flex items-center gap-1.5 text-sm font-medium text-[var(--text-primary)] shrink-0">
           <MapPin size={15} />
           Culiacán, Sin.
         </button>
+
+        {/* Toggle de paleta */}
+        <ThemeToggle />
 
         {/* Avatar */}
         <div className="w-8 h-8 rounded-full bg-[var(--brand-tint)] flex items-center justify-center shrink-0">

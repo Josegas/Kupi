@@ -12,7 +12,7 @@ export default function CategoryChips() {
         <button
           key={cat}
           onClick={() => setSelected(cat)}
-          className={`shrink-0 px-4 h-8 rounded-full text-[13px] font-semibold border transition-colors ${
+          className={`shrink-0 px-4 h-8 rounded-full text-[13px] font-semibold border active:scale-95 transition-[transform,colors] duration-[160ms] [transition-timing-function:cubic-bezier(0.23,1,0.32,1)] ${
             selected === cat
               ? "bg-[var(--brand)] text-white border-[var(--brand)]"
               : "bg-[var(--surface)] text-[var(--text-primary)] border-[var(--border)] hover:border-[var(--brand)] hover:text-[var(--brand)]"

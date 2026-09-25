@@ -20,7 +20,7 @@ export default function CTAButton({ platform, total, href }: Props) {
           href={href}
           target="_blank"
           rel="noopener noreferrer"
-          className="kupi-btn flex items-center justify-center gap-2 w-full h-13 rounded-2xl bg-[var(--savings)] text-white text-[15px] font-bold shadow-[0_4px_12px_rgba(21,128,61,0.25)]"
+          className="kupi-btn flex items-center justify-center gap-2 w-full h-13 rounded-2xl bg-[var(--savings)] text-white text-[15px] font-bold shadow-[0_4px_12px_rgba(21,128,61,0.25)] select-none"
         >
           Ir a {PLATFORM_LABELS[platform] ?? platform} · ${total.toFixed(2)}
           <ArrowRight size={16} />
