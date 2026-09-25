@@ -1,0 +1,58 @@
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap");
+@import "tailwindcss";
+
+:root {
+  --bg: #F5F5F3;
+  --surface: #FFFFFF;
+  --border: #E4E4DF;
+  --text-primary: #1F2323;
+  --text-secondary: #6B6558;
+  --text-muted: #9A9384;
+  --brand: #C2410C;
+  --brand-tint: #FCE8DC;
+  --savings: #15803D;
+  --savings-tint: #EAF6EE;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-border: var(--border);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+  --color-brand: var(--brand);
+  --color-brand-tint: var(--brand-tint);
+  --color-savings: var(--savings);
+  --color-savings-tint: var(--savings-tint);
+  --font-display: "Space Grotesk", sans-serif;
+  --font-body: "IBM Plex Sans", sans-serif;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+}
+
+.kupi-card {
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+.kupi-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 12px 28px rgba(31, 35, 35, 0.10);
+}
+.kupi-btn {
+  transition: transform 0.15s ease, filter 0.15s ease;
+}
+.kupi-btn:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.06);
+}
+.kupi-input:focus-within {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px rgba(194, 65, 12, 0.14);
+}
+.kupi-link:hover {
+  color: var(--brand);
+}
