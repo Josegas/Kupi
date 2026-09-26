@@ -26,3 +26,5 @@ class PriceQuote:
     currency: str = "MXN"
     eta_minutes: Optional[int] = None
     deep_link: str = ""   # URL para abrir la tienda en la app/web de la plataforma
+    store_name: str = ""  # nombre de la sucursal en esa plataforma
+    store_address: str = ""  # dirección de la sucursal

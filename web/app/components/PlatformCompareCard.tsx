@@ -1,12 +1,14 @@
 import { ArrowRight } from "lucide-react";
 
 interface Props {
-  platform: "rappi" | "ubereats" | "didi";
+  platform: string;
   productPrice: number;
   deliveryFee: number;
   serviceFee: number;
   total: number;
   etaMinutes?: number;
+  storeName?: string;
+  storeAddress?: string;
   isCheapest: boolean;
   onSelect: () => void;
 }
@@ -30,6 +32,8 @@ export default function PlatformCompareCard({
   serviceFee,
   total,
   etaMinutes,
+  storeName,
+  storeAddress,
   isCheapest,
   onSelect,
 }: Props) {
@@ -62,6 +66,16 @@ export default function PlatformCompareCard({
           </span>
         )}
       </div>
+
+      {/* Sucursal */}
+      {storeName && (
+        <div className="flex flex-col gap-0.5 -mt-1">
+          <span className="text-[12px] font-medium text-[var(--text-secondary)] leading-tight">{storeName}</span>
+          {storeAddress && (
+            <span className="text-[11px] text-[var(--text-muted)] leading-tight">{storeAddress}</span>
+          )}
+        </div>
+      )}
 
       {/* Precio total */}
       <p

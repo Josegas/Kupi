@@ -1,16 +1,50 @@
 "use client";
-import { useState } from "react";
-import { ArrowLeft } from "lucide-react";
+import { useState, useEffect } from "react";
+import { ArrowLeft, RefreshCw, MapPin } from "lucide-react";
 import Link from "next/link";
 import PlatformCompareCard from "../../components/PlatformCompareCard";
 import CTAButton from "../../components/CTAButton";
-import { MOCK_COMPARE } from "../../lib/mock";
+import { compareProducts, QuoteResponse } from "../../lib/api";
+import { RestaurantConfig } from "../../lib/restaurants";
+import { useLocation } from "../../lib/location";
 
-export default function CompareClient() {
-  const data = MOCK_COMPARE;
-  const sorted = [...data.quotes].sort((a, b) => a.total - b.total);
-  const cheapest = sorted[0];
-  const [selected, setSelected] = useState(cheapest);
+interface Props {
+  restaurant: RestaurantConfig;
+}
+
+export default function CompareClient({ restaurant }: Props) {
+  const { location } = useLocation();
+  const [quotes, setQuotes] = useState<QuoteResponse[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<QuoteResponse | null>(null);
+
+  const fetchQuotes = () => {
+    setLoading(true);
+    setError(null);
+    compareProducts({
+      rappi_store_id: restaurant.rappi_store_id,
+      ubereats_store_id: restaurant.ubereats_store_id,
+      rappi_product_id: restaurant.rappi_product_id,
+      ubereats_product_id: restaurant.ubereats_product_id,
+      lat: location.lat,
+      lng: location.lng,
+      rappi_toppings: restaurant.rappi_toppings,
+    })
+      .then((data) => {
+        const sorted = [...data].sort((a, b) => a.total - b.total);
+        setQuotes(sorted);
+        setSelected(sorted[0] ?? null);
+      })
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    fetchQuotes();
+  }, [restaurant, location]);
+
+  const cheapest = quotes[0] ?? null;
 
   return (
     <div className="min-h-screen bg-[var(--bg)] pb-28">
@@ -20,12 +54,18 @@ export default function CompareClient() {
           <Link href="/" className="kupi-link text-[var(--text-secondary)] transition-colors">
             <ArrowLeft size={20} />
           </Link>
-          <span
-            className="text-[17px] font-semibold text-[var(--text-primary)]"
-            style={{ fontFamily: "var(--font-display)" }}
-          >
-            {data.restaurant}
-          </span>
+          <div>
+            <span
+              className="text-[17px] font-semibold text-[var(--text-primary)]"
+              style={{ fontFamily: "var(--font-display)" }}
+            >
+              {restaurant.name}
+            </span>
+            <p className="text-[12px] text-[var(--text-muted)] flex items-center gap-1 mt-0.5">
+              <MapPin size={11} className="text-[var(--brand)]" />
+              {location.label}
+            </p>
+          </div>
         </div>
       </div>
 
@@ -40,10 +80,10 @@ export default function CompareClient() {
               </div>
               <div className="p-5">
                 <h2 className="text-[18px] font-bold text-[var(--text-primary)] mb-1">
-                  {data.product.name}
+                  {restaurant.product_name}
                 </h2>
                 <p className="text-[14px] text-[var(--text-secondary)] leading-relaxed">
-                  {data.product.description}
+                  {restaurant.product_description}
                 </p>
               </div>
             </div>
@@ -51,32 +91,81 @@ export default function CompareClient() {
 
           {/* Panel derecho: comparación */}
           <div className="flex-1">
-            <h3
-              className="text-[16px] font-semibold text-[var(--text-secondary)] mb-5"
-              style={{ fontFamily: "var(--font-display)" }}
-            >
-              Precio final en cada plataforma
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {sorted.map((q) => (
-                <PlatformCompareCard
-                  key={q.platform}
-                  {...q}
-                  isCheapest={q.platform === cheapest.platform}
-                  onSelect={() => setSelected(q)}
-                />
-              ))}
+            <div className="flex items-center justify-between mb-5">
+              <h3
+                className="text-[16px] font-semibold text-[var(--text-secondary)]"
+                style={{ fontFamily: "var(--font-display)" }}
+              >
+                Precio final en cada plataforma
+              </h3>
+              {!loading && (
+                <button
+                  onClick={fetchQuotes}
+                  className="flex items-center gap-1.5 text-[13px] text-[var(--text-muted)] hover:text-[var(--brand)] transition-colors kupi-link"
+                >
+                  <RefreshCw size={13} />
+                  Actualizar
+                </button>
+              )}
             </div>
+
+            {/* Estado de carga */}
+            {loading && (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {[0, 1].map((i) => (
+                  <div
+                    key={i}
+                    className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5 h-52 animate-pulse"
+                  />
+                ))}
+              </div>
+            )}
+
+            {/* Error */}
+            {!loading && error && (
+              <div className="rounded-2xl border border-red-200 bg-red-50 dark:bg-red-900/10 p-6 text-center">
+                <p className="text-[14px] text-red-600 dark:text-red-400 mb-3">{error}</p>
+                <button
+                  onClick={fetchQuotes}
+                  className="text-[13px] font-semibold text-[var(--brand)] underline"
+                >
+                  Reintentar
+                </button>
+              </div>
+            )}
+
+            {/* Resultados */}
+            {!loading && !error && quotes.length > 0 && (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {quotes.map((q) => (
+                  <PlatformCompareCard
+                    key={q.platform}
+                    platform={q.platform}
+                    productPrice={q.product_price}
+                    deliveryFee={q.delivery_fee}
+                    serviceFee={q.service_fee}
+                    total={q.total}
+                    etaMinutes={q.eta_minutes ?? undefined}
+                    storeName={q.store_name}
+                    storeAddress={q.store_address}
+                    isCheapest={cheapest !== null && q.platform === cheapest.platform}
+                    onSelect={() => setSelected(q)}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>
 
       {/* CTA fijo abajo */}
-      <CTAButton
-        platform={selected.platform}
-        total={selected.total}
-        href={selected.deepLink}
-      />
+      {selected && (
+        <CTAButton
+          platform={selected.platform}
+          total={selected.total}
+          href={selected.deep_link}
+        />
+      )}
     </div>
   );
 }

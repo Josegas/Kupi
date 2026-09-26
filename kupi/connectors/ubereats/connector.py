@@ -85,8 +85,17 @@ class UberEatsConnector(BaseConnector):
         Cotiza el precio real en 2 pasos:
           1. createDraftOrderV2  → obtiene draftOrderUUID
           2. getCheckoutPresentationV1 → desglose: producto + envío + cuota de servicio
+        Reutiliza el getStoreV1 (ya llamado en fetch_menu) para obtener nombre y dirección.
         """
         session = _build_session(lat, lng)
+
+        # Obtener nombre y dirección de la tienda
+        store_body = {"storeUuid": store_id, "diningMode": "DELIVERY", "time": {"asap": True}, "cbType": "EATER_ENDORSED"}
+        store_resp = session.post(f"{_BASE_URL}/getStoreV1?localeCode=mx", json=store_body, impersonate="chrome120")
+        store_resp.raise_for_status()
+        store_data = store_resp.json().get("data", {})
+        store_name = store_data.get("title", "")
+        store_address = store_data.get("location", {}).get("address", "")
 
         # Construir el referer con el quickView del producto específico
         modctx = json.dumps({
@@ -176,7 +185,7 @@ class UberEatsConnector(BaseConnector):
         if data2.get("status") != "success":
             raise RuntimeError(f"getCheckoutPresentationV1 falló: {data2}")
 
-        return _parse_checkout(data2["data"], product, store_id)
+        return _parse_checkout(data2["data"], product, store_id, store_name, store_address)
 
 
 def _parse_menu(store_data: dict) -> list[Product]:
@@ -184,7 +193,7 @@ def _parse_menu(store_data: dict) -> list[Product]:
     catalog_map = store_data.get("catalogSectionsMap", {})
     for section_uuid, subsections in catalog_map.items():
         for subsection in subsections:
-            subsection_uuid = subsection.get("uuid", "")
+            subsection_uuid = subsection.get("catalogSectionUUID", "")
             items = (
                 subsection.get("payload", {})
                 .get("standardItemsPayload", {})
@@ -204,18 +213,12 @@ def _parse_menu(store_data: dict) -> list[Product]:
     return products
 
 
-def _parse_checkout(checkout_data: dict, product: Product, store_id: str) -> PriceQuote:
+def _parse_checkout(checkout_data: dict, product: Product, store_id: str, store_name: str = "", store_address: str = "") -> PriceQuote:
     charges = checkout_data.get("checkoutPayloads", {}).get("fareBreakdown", {}).get("charges", [])
 
     delivery_fee = 0.0
     service_fee = 0.0
     total = product.price
-
-    fare_id_map = {
-        "eats_fare.delivery_fee": "delivery",
-        "eats_fare.service_fee": "service",
-        "eats_fare.total": "total",
-    }
 
     for charge in charges:
         fare_id = charge.get("fareBreakdownChargeMetadata", {}).get("fareInfoID", "")
@@ -227,10 +230,10 @@ def _parse_checkout(checkout_data: dict, product: Product, store_id: str) -> Pri
 
         if fare_id == "eats_fare.delivery_fee":
             delivery_fee = amount
-        elif fare_id == "eats_fare.service_fee":
+        elif "service_fee" in fare_id or "basket_dependent_fee" in fare_id:
             service_fee = amount
-        elif fare_id == "eats_fare.total":
-            total = amount
+
+    total = product.price + delivery_fee + service_fee
 
     return PriceQuote(
         platform="ubereats",
@@ -239,4 +242,6 @@ def _parse_checkout(checkout_data: dict, product: Product, store_id: str) -> Pri
         service_fee=service_fee,
         total=total,
         deep_link=f"https://www.ubereats.com/mx/store/store/{store_id}",
+        store_name=store_name,
+        store_address=store_address,
     )

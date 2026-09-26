@@ -29,6 +29,8 @@ class CompareRequest(BaseModel):
     ubereats_product_id: str
     lat: float = DEFAULT_LAT
     lng: float = DEFAULT_LNG
+    # Toppings de Rappi para simular checkout real (opcional — si no se envían, se usa el precio del menú)
+    rappi_toppings: list[dict] | None = None
 
 
 class QuoteResponse(BaseModel):
@@ -40,6 +42,8 @@ class QuoteResponse(BaseModel):
     currency: str
     eta_minutes: int | None
     deep_link: str
+    store_name: str
+    store_address: str
 
 
 # --- Endpoints ---
@@ -81,7 +85,10 @@ def compare(req: CompareRequest):
         rappi_products = rappi.fetch_menu(req.rappi_store_id, req.lat, req.lng)
         rappi_product = next((p for p in rappi_products if p.product_id == req.rappi_product_id), None)
         if rappi_product:
-            quotes.append(rappi.fetch_price(req.rappi_store_id, rappi_product, req.lat, req.lng))
+            quotes.append(rappi.fetch_price(
+                req.rappi_store_id, rappi_product, req.lat, req.lng,
+                toppings=req.rappi_toppings,
+            ))
         else:
             errors.append(f"Producto {req.rappi_product_id} no encontrado en Rappi")
     except Exception as e:

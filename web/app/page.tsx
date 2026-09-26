@@ -1,7 +1,7 @@
 import TopNav from "./components/TopNav";
 import CategoryChips from "./components/CategoryChips";
 import RestaurantCard from "./components/RestaurantCard";
-import { MOCK_RESTAURANTS } from "./lib/mock";
+import { RESTAURANTS } from "./lib/restaurants";
 
 export default function Home() {
   return (
@@ -28,9 +28,17 @@ export default function Home() {
 
         {/* Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {MOCK_RESTAURANTS.map((r) => (
+          {RESTAURANTS.map((r) => (
             <div key={r.id} className="stagger-item">
-              <RestaurantCard {...r} />
+              <RestaurantCard
+                id={r.id}
+                name={r.name}
+                cuisine={r.cuisine}
+                rating={r.rating}
+                fromPrice={r.fromPrice}
+                platforms={r.platforms}
+                imageUrl={r.imageUrl}
+              />
             </div>
           ))}
         </div>
