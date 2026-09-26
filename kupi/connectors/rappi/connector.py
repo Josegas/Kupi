@@ -105,9 +105,9 @@ class RappiConnector(BaseConnector):
     ) -> PriceQuote:
         """
         Simula el checkout de Rappi en 3 pasos para obtener el desglose real:
-          1. PUT  /v2/restaurant/store     — pone el producto en el carrito
-          2. POST /v1/restaurant/recalculate — recalcula precios y fees
-          3. GET  /v1/restaurant/summary-v2  — desglose completo (envío, servicio, descuentos)
+          1. PUT  /v2/restaurant/store     - pone el producto en el carrito
+          2. POST /v1/restaurant/recalculate - recalcula precios y fees
+          3. GET  /v1/restaurant/summary-v2  - desglose completo (envío, servicio, descuentos)
         """
         store_name = store_data.get("name", "")
         store_address = store_data.get("address", "")
@@ -117,7 +117,7 @@ class RappiConnector(BaseConnector):
         timestamp_ms = int(time.time() * 1000)
         vendor_id = f"{partner_id}_{timestamp_ms}"
 
-        # Paso 1 — PUT carrito
+        # Paso 1 - PUT carrito (reintenta una vez si hay 409 por carrito previo activo)
         product_entry_id = f"{store_id}_{product.product_id}"
         cart_body = [{
             "id": int(store_id),
@@ -140,9 +140,25 @@ class RappiConnector(BaseConnector):
             json=cart_body,
             timeout=10,
         )
+        if r1.status_code == 409:
+            # Carrito previo activo - vaciarlo y reintentar
+            time.sleep(0.5)
+            requests.put(
+                f"{_CART_BASE}/v2/restaurant/store",
+                headers=_HEADERS,
+                json=[{"id": int(store_id), "products": [], "vendor": {"id": vendor_id, "type": "rappi", "flow_type": "rappi-web"}}],
+                timeout=10,
+            )
+            time.sleep(0.3)
+            r1 = requests.put(
+                f"{_CART_BASE}/v2/restaurant/store",
+                headers=_HEADERS,
+                json=cart_body,
+                timeout=10,
+            )
         r1.raise_for_status()
 
-        # Paso 2 — recalcular (change-address no es necesario para cotización)
+        # Paso 2 - recalcular (change-address no es necesario para cotización)
         r2 = requests.post(
             f"{_CART_BASE}/v1/restaurant/recalculate",
             headers=_HEADERS,
@@ -151,7 +167,7 @@ class RappiConnector(BaseConnector):
         )
         r2.raise_for_status()
 
-        # Paso 3 — summary-v2 con desglose completo
+        # Paso 3 - summary-v2 con desglose completo
         r3 = requests.get(
             f"{_CART_BASE}/v1/restaurant/summary-v2",
             headers=_HEADERS,
@@ -176,7 +192,7 @@ def _parse_summary(
       type="product_total" → precio con descuento
       type="shipping"      → costo de envío real (0 si hay promo de envío gratis)
       type="service_fee"   → tarifa de servicio
-      type="tip"           → propina (se excluye — es opcional del usuario)
+      type="tip"           → propina (se excluye - es opcional del usuario)
     """
     product_price = product.price
     delivery_fee = 0.0
@@ -192,7 +208,7 @@ def _parse_summary(
                 delivery_fee = val
             elif t == "service_fee":
                 service_fee = val
-            # tip se ignora — es opcional del usuario, no parte del precio de la plataforma
+            # tip se ignora - es opcional del usuario, no parte del precio de la plataforma
 
     total = product_price + delivery_fee + service_fee
 

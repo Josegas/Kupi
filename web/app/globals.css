@@ -142,7 +142,7 @@ body {
   animation-delay: 160ms;
 }
 
-/* Tarjetas del grid con stagger — base 220ms para que lleguen después del hero */
+/* Tarjetas del grid con stagger - base 220ms para que lleguen después del hero */
 .stagger-item {
   opacity: 0;
   transform: translateY(10px);

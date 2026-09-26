@@ -1,7 +1,7 @@
 export default function KupiLogo({ size = 44 }: { size?: number }) {
   return (
     <div className="flex items-center gap-2.5 shrink-0">
-      {/* Ícono SVG — colores fijos, se ven bien en ambos temas */}
+      {/* Ícono SVG - colores fijos, se ven bien en ambos temas */}
       <svg
         width={size}
         height={size}
@@ -27,7 +27,7 @@ export default function KupiLogo({ size = 44 }: { size?: number }) {
         />
       </svg>
 
-      {/* Wordmark — usa var(--text-primary) para adaptarse al tema */}
+      {/* Wordmark - usa var(--text-primary) para adaptarse al tema */}
       <span
         style={{
           fontFamily: "var(--font-display)",

@@ -25,7 +25,7 @@ Exact props, types, and defaults. Options passed to `toast()` override the same 
 
 ## `toast()` options
 
-`toast(message, options)` — message is a string, JSX, or a function returning JSX. Returns the toast's id.
+`toast(message, options)` - message is a string, JSX, or a function returning JSX. Returns the toast's id.
 
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -58,7 +58,7 @@ Exact props, types, and defaults. Options passed to `toast()` override the same 
 | `toast.success / .error / .info / .warning(message, opts?)` | Typed toast with matching icon. |
 | `toast.loading(message, opts?)` | Toast with a spinner; update it by id. |
 | `toast.promise(promise, { loading, success, error })` | Loading toast that resolves with the promise; `success`/`error` accept strings, JSX, functions of the result, or objects of toast options. |
-| `toast.custom((t) => jsx, opts?)` | Headless toast — your JSX, Sonner's behavior. |
+| `toast.custom((t) => jsx, opts?)` | Headless toast - your JSX, Sonner's behavior. |
 | `toast.dismiss(id?)` | Dismiss one toast, or all when called without an id. |
 | `toast.getActiveToasts()` | All active toasts, usable outside React. |
 | `useSonner()` | React hook returning `{ toasts }`. |

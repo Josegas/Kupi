@@ -111,7 +111,7 @@ class UberEatsConnector(BaseConnector):
         )
         session.headers.update({"referer": referer})
 
-        # Paso 1 — crear draft order
+        # Paso 1 - crear draft order
         create_body = {
             "isMulticart": True,
             "shoppingCartItems": [{
@@ -155,7 +155,7 @@ class UberEatsConnector(BaseConnector):
 
         draft_order_uuid = data1["data"]["draftOrder"]["uuid"]
 
-        # Paso 2 — obtener desglose de precios
+        # Paso 2 - obtener desglose de precios
         checkout_body = {
             "draftOrderUUID": draft_order_uuid,
             "isGroupOrder": False,
@@ -170,6 +170,7 @@ class UberEatsConnector(BaseConnector):
                 "total",
                 "subtotal",
                 "fareBreakdown",
+                "deliveryOptInInfo",
                 "paymentProfilesEligibility",
                 "requestUtensilPayload",
                 "versionMetadata",
@@ -185,7 +186,8 @@ class UberEatsConnector(BaseConnector):
         if data2.get("status") != "success":
             raise RuntimeError(f"getCheckoutPresentationV1 falló: {data2}")
 
-        return _parse_checkout(data2["data"], product, store_id, store_name, store_address)
+        checkout_data = data2["data"]
+        return _parse_checkout(checkout_data, product, store_id, store_name, store_address)
 
 
 def _parse_menu(store_data: dict) -> list[Product]:
@@ -213,25 +215,32 @@ def _parse_menu(store_data: dict) -> list[Product]:
     return products
 
 
+def _parse_money_text(text: str) -> float:
+    """Convierte '$21.00' o '21.00' a float. Retorna 0.0 si no puede."""
+    try:
+        return float(text.replace("$", "").replace(",", "").strip())
+    except (ValueError, AttributeError):
+        return 0.0
+
+
 def _parse_checkout(checkout_data: dict, product: Product, store_id: str, store_name: str = "", store_address: str = "") -> PriceQuote:
-    charges = checkout_data.get("checkoutPayloads", {}).get("fareBreakdown", {}).get("charges", [])
+    payloads = checkout_data.get("checkoutPayloads", {})
+    charges = payloads.get("fareBreakdown", {}).get("charges", [])
 
     delivery_fee = 0.0
     service_fee = 0.0
-    total = product.price
 
     for charge in charges:
         fare_id = charge.get("fareBreakdownChargeMetadata", {}).get("fareInfoID", "")
-        value_text = charge.get("value", {}).get("text", "").replace("$", "").replace(",", "").strip()
-        try:
-            amount = float(value_text)
-        except ValueError:
-            continue
-
+        amount = _parse_money_text(charge.get("value", {}).get("text", ""))
         if fare_id == "eats_fare.delivery_fee":
             delivery_fee = amount
         elif "service_fee" in fare_id or "basket_dependent_fee" in fare_id:
             service_fee = amount
+
+    # No se ajusta el delivery fee por tier (Basica vs Prioritaria):
+    # UberEats balancea los fees entre tiers -- lo que sube en delivery baja en
+    # service fee, por lo que el TOTAL Prioritaria es casi identico al total Basica.
 
     total = product.price + delivery_fee + service_fee
 

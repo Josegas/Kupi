@@ -6,7 +6,7 @@ class BaseConnector(ABC):
     """
     Interfaz común para todos los conectores de plataforma.
     Cada conector (Rappi, Uber Eats, DiDi) implementa estos dos métodos.
-    La capa de pricing/ solo usa esta interfaz — no importa nada específico de plataforma.
+    La capa de pricing/ solo usa esta interfaz - no importa nada específico de plataforma.
     """
 
     @abstractmethod

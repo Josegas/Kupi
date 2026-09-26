@@ -29,7 +29,7 @@ class CompareRequest(BaseModel):
     ubereats_product_id: str
     lat: float = DEFAULT_LAT
     lng: float = DEFAULT_LNG
-    # Toppings de Rappi para simular checkout real (opcional — si no se envían, se usa el precio del menú)
+    # Toppings de Rappi para simular checkout real (opcional - si no se envían, se usa el precio del menú)
     rappi_toppings: list[dict] | None = None
 
 

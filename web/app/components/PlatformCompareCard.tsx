@@ -10,6 +10,7 @@ interface Props {
   storeName?: string;
   storeAddress?: string;
   isCheapest: boolean;
+  approximate?: boolean;
   onSelect: () => void;
 }
 
@@ -35,6 +36,7 @@ export default function PlatformCompareCard({
   storeName,
   storeAddress,
   isCheapest,
+  approximate,
   onSelect,
 }: Props) {
   return (
@@ -106,6 +108,15 @@ export default function PlatformCompareCard({
           <span>${total.toFixed(2)}</span>
         </div>
       </div>
+
+      {approximate && (
+        <p className="text-[11px] text-[var(--text-muted)] leading-snug -mt-1">
+          El precio puede variar algunos pesos.{" "}
+          <span className="font-medium text-[var(--text-secondary)]">
+            La plataforma más barata sí es real.
+          </span>
+        </p>
+      )}
 
       <button className="flex items-center justify-center gap-2 text-[13px] font-semibold text-[var(--brand)] mt-auto">
         Ver en {PLATFORM_LABELS[platform]} <ArrowRight size={14} />

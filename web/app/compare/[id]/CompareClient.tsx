@@ -149,6 +149,7 @@ export default function CompareClient({ restaurant }: Props) {
                     storeName={q.store_name}
                     storeAddress={q.store_address}
                     isCheapest={cheapest !== null && q.platform === cheapest.platform}
+                    approximate={q.platform === "ubereats"}
                     onSelect={() => setSelected(q)}
                   />
                 ))}

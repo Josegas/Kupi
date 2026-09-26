@@ -121,7 +121,7 @@ export default function TopNav() {
               </div>
             )}
 
-            {/* Sin resultados — solo cuando terminó de buscar y no hay nada */}
+            {/* Sin resultados - solo cuando terminó de buscar y no hay nada */}
             {!searching && input.trim().length >= 5 && suggestions.length === 0 && (
               <div className="absolute top-full left-0 mt-1 w-full min-w-[300px] bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-lg px-4 py-3 z-50">
                 <span className="text-[13px] text-[var(--text-muted)]">Sin resultados. Prueba con el nombre del fraccionamiento o colonia.</span>

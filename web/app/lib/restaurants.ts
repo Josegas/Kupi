@@ -24,7 +24,7 @@ export interface RestaurantConfig {
   // Producto que se compara por defecto
   product_name: string;
   product_description: string;
-  // Toppings de Rappi (opcionales) — necesarios para la simulación de checkout real
+  // Toppings de Rappi (opcionales) - necesarios para la simulación de checkout real
   rappi_toppings?: RappiTopping[];
 }
 

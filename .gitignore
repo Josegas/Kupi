@@ -13,7 +13,7 @@ build/
 venv/
 env/
 
-# Variables de entorno — NUNCA subir al repo
+# Variables de entorno - NUNCA subir al repo
 .env
 .env.*
 !.env.example
