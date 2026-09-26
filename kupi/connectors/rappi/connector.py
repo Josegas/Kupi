@@ -18,6 +18,28 @@ _HEADERS = {
 
 _STORE_URL = "https://services.mxgrability.rappi.com/api/web-gateway/web/restaurants-bus/store/id"
 _CART_BASE = "https://services.mxgrability.rappi.com/api/ms/shopping-cart"
+_IMAGE_CDN = "https://images.rappi.com.mx/products/"
+_LOGO_CDN = "https://images.rappi.com.mx/restaurants_logo/"
+_BG_CDN = "https://images.rappi.com.mx/restaurants_background/"
+
+
+def _rappi_image(raw: str) -> str:
+    if not raw:
+        return ""
+    if raw.startswith("http"):
+        return raw
+    return f"{_IMAGE_CDN}{raw}"
+
+
+def _rappi_store_image(store_data: dict) -> str:
+    """Devuelve la imagen de fondo del restaurante, o su logo como fallback."""
+    bg = store_data.get("background", "")
+    if bg:
+        return f"{_BG_CDN}{bg}"
+    logo = store_data.get("logo", "")
+    if logo:
+        return f"{_LOGO_CDN}{logo}"
+    return ""
 
 
 class RappiConnector(BaseConnector):
@@ -46,7 +68,7 @@ class RappiConnector(BaseConnector):
                     price=float(p["price"]),
                     real_price=float(p.get("real_price", p["price"])),
                     description=p.get("description", ""),
-                    image_url=p.get("image", ""),
+                    image_url=_rappi_image(p.get("image", "")),
                 ))
         return products
 
@@ -65,21 +87,20 @@ class RappiConnector(BaseConnector):
         store_name = data.get("name", "")
         store_address = data.get("address", "")
 
-        # Si tenemos toppings, intentar checkout real para obtener service fee real
-        if toppings:
-            try:
-                return self._fetch_checkout(
-                    store_id=store_id,
-                    product=product,
-                    lat=lat,
-                    lng=lng,
-                    toppings=toppings,
-                    store_data=data,
-                    eta_minutes=eta_minutes,
-                )
-            except Exception as e:
-                # Si falla el checkout, caer de vuelta al precio del menú sin service fee
-                print(f"[Rappi] checkout falló ({e}), usando precio de menú")
+        # Siempre intentar checkout real para obtener envío y service fee con promos aplicadas
+        try:
+            return self._fetch_checkout(
+                store_id=store_id,
+                product=product,
+                lat=lat,
+                lng=lng,
+                toppings=toppings or [],
+                store_data=data,
+                eta_minutes=eta_minutes,
+            )
+        except Exception as e:
+            # Si falla (ej. producto con personalización obligatoria), caer al precio del menú
+            print(f"[Rappi] checkout falló ({e}), usando precio de menú")
 
         return PriceQuote(
             platform="rappi",
@@ -88,7 +109,7 @@ class RappiConnector(BaseConnector):
             service_fee=0.0,
             total=product.price + delivery_fee,
             eta_minutes=eta_minutes,
-            deep_link=f"https://www.rappi.com.mx/restaurantes/{store_id}",
+            deep_link=f"https://www.rappi.com.mx/restaurantes/{store_id}?product={product.product_id}",
             store_name=store_name,
             store_address=store_address,
         )
@@ -219,7 +240,7 @@ def _parse_summary(
         service_fee=service_fee,
         total=total,
         eta_minutes=eta_minutes,
-        deep_link=f"https://www.rappi.com.mx/restaurantes/{store_id}",
+        deep_link=f"https://www.rappi.com.mx/restaurantes/{store_id}?product={product.product_id}",
         store_name=store_name,
         store_address=store_address,
     )

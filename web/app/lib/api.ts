@@ -1,5 +1,10 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
+export function proxyImage(url: string): string {
+  if (!url) return "";
+  return `${API_URL}/proxy/image?url=${encodeURIComponent(url)}`;
+}
+
 export interface QuoteResponse {
   platform: string;
   product_price: number;
@@ -20,7 +25,33 @@ export interface CompareRequest {
   ubereats_product_id: string;
   lat?: number;
   lng?: number;
-  rappi_toppings?: object[];
+}
+
+export interface CombinedProduct {
+  name: string;
+  description: string;
+  price: number;
+  image_url: string;
+  rappi_product_id: string;
+  ubereats_product_id: string;
+}
+
+export async function fetchCombinedMenu(
+  rappi_store_id: string,
+  ubereats_store_id: string,
+  lat?: number,
+  lng?: number,
+): Promise<CombinedProduct[]> {
+  const params = new URLSearchParams({ rappi_store_id, ubereats_store_id });
+  if (lat !== undefined) params.set("lat", String(lat));
+  if (lng !== undefined) params.set("lng", String(lng));
+  const res = await fetch(`${API_URL}/menu/combined?${params}`);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.detail ?? `Error ${res.status}`);
+  }
+  const data = await res.json();
+  return data.products as CombinedProduct[];
 }
 
 export async function compareProducts(req: CompareRequest): Promise<QuoteResponse[]> {

@@ -1,5 +1,10 @@
-from fastapi import FastAPI, HTTPException
+import difflib
+import unicodedata
+
+import requests as _requests
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from pydantic import BaseModel
 
 from kupi.core.config import DEFAULT_LAT, DEFAULT_LNG
@@ -48,9 +53,69 @@ class QuoteResponse(BaseModel):
 
 # --- Endpoints ---
 
+def _normalize_name(name: str) -> str:
+    name = name.lower()
+    name = unicodedata.normalize("NFKD", name)
+    name = "".join(c for c in name if not unicodedata.combining(c))
+    name = "".join(c if c.isalnum() or c.isspace() else " " for c in name)
+    return " ".join(name.split())
+
+
+def _match_products(rappi_products: list, ue_products: list) -> list[dict]:
+    ue_norm = [(p, _normalize_name(p.name)) for p in ue_products]
+    results = []
+    seen_ue_ids: set[str] = set()
+
+    for rp in rappi_products:
+        rp_norm = _normalize_name(rp.name)
+        best_match = None
+        best_ratio = 0.0
+        for up, up_norm in ue_norm:
+            if up.product_id in seen_ue_ids:
+                continue
+            ratio = difflib.SequenceMatcher(None, rp_norm, up_norm).ratio()
+            if ratio > best_ratio:
+                best_ratio = ratio
+                best_match = up
+        if best_ratio >= 0.55 and best_match:
+            seen_ue_ids.add(best_match.product_id)
+            results.append({
+                "name": rp.name,
+                "description": rp.description,
+                "price": rp.price,
+                "image_url": rp.image_url or best_match.image_url or "",
+                "rappi_product_id": rp.product_id,
+                "ubereats_product_id": best_match.product_id,
+            })
+
+    return sorted(results, key=lambda x: x["price"])
+
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/proxy/image")
+def proxy_image(url: str = Query(...)):
+    """Proxy para imágenes con hotlink protection (ej. CDN de Rappi)."""
+    try:
+        resp = _requests.get(
+            url,
+            headers={
+                "Referer": "https://www.rappi.com.mx/",
+                "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+            },
+            timeout=10,
+        )
+        resp.raise_for_status()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    return Response(
+        content=resp.content,
+        media_type=resp.headers.get("content-type", "image/png"),
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
 
 
 @app.get("/menu/rappi/{store_id}")
@@ -69,6 +134,38 @@ def get_ubereats_menu(store_id: str, lat: float = DEFAULT_LAT, lng: float = DEFA
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e))
     return {"store_id": store_id, "products": [p.__dict__ for p in products]}
+
+
+@app.get("/menu/combined")
+def get_combined_menu(
+    rappi_store_id: str,
+    ubereats_store_id: str,
+    lat: float = DEFAULT_LAT,
+    lng: float = DEFAULT_LNG,
+):
+    """
+    Jala el menú de ambas plataformas y devuelve los productos que existen en las dos,
+    haciendo matching por nombre normalizado.
+    """
+    errors: list[str] = []
+    rappi_products = []
+    ue_products = []
+
+    try:
+        rappi_products = rappi.fetch_menu(rappi_store_id, lat, lng)
+    except Exception as e:
+        errors.append(f"Rappi: {e}")
+
+    try:
+        ue_products = ubereats.fetch_menu(ubereats_store_id, lat, lng)
+    except Exception as e:
+        errors.append(f"UberEats: {e}")
+
+    if not rappi_products or not ue_products:
+        raise HTTPException(status_code=502, detail={"errors": errors})
+
+    matched = _match_products(rappi_products, ue_products)
+    return {"products": matched, "errors": errors}
 
 
 @app.post("/compare", response_model=list[QuoteResponse])

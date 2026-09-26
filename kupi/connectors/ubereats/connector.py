@@ -105,9 +105,15 @@ class UberEatsConnector(BaseConnector):
             "itemUuid": product.product_id,
             "showSeeDetailsCTA": True,
         })
+        modctx_encoded = urllib.parse.quote(urllib.parse.quote(modctx))  # doble encode para el header
+        modctx_deep = urllib.parse.quote(modctx)  # encode simple para el deep link
         referer = (
             f"https://www.ubereats.com/mx/store/store/{store_id}"
-            f"?diningMode=DELIVERY&mod=quickView&modctx={urllib.parse.quote(urllib.parse.quote(modctx))}"
+            f"?diningMode=DELIVERY&mod=quickView&modctx={modctx_encoded}"
+        )
+        deep_link_ue = (
+            f"https://www.ubereats.com/mx/store/store/{store_id}"
+            f"?diningMode=DELIVERY&mod=quickView&modctx={modctx_deep}"
         )
         session.headers.update({"referer": referer})
 
@@ -187,7 +193,7 @@ class UberEatsConnector(BaseConnector):
             raise RuntimeError(f"getCheckoutPresentationV1 falló: {data2}")
 
         checkout_data = data2["data"]
-        return _parse_checkout(checkout_data, product, store_id, store_name, store_address)
+        return _parse_checkout(checkout_data, product, store_id, store_name, store_address, deep_link=deep_link_ue)
 
 
 def _parse_menu(store_data: dict) -> list[Product]:
@@ -208,7 +214,7 @@ def _parse_menu(store_data: dict) -> list[Product]:
                     price=item.get("price", 0) / 100,
                     real_price=item.get("price", 0) / 100,  # UberEats no distingue real_price en este endpoint
                     description=item.get("itemDescription", ""),
-                    image_url="",
+                    image_url=item.get("imageURL") or "",
                     section_uuid=section_uuid,
                     subsection_uuid=subsection_uuid,
                 ))
@@ -223,7 +229,7 @@ def _parse_money_text(text: str) -> float:
         return 0.0
 
 
-def _parse_checkout(checkout_data: dict, product: Product, store_id: str, store_name: str = "", store_address: str = "") -> PriceQuote:
+def _parse_checkout(checkout_data: dict, product: Product, store_id: str, store_name: str = "", store_address: str = "", deep_link: str = "") -> PriceQuote:
     payloads = checkout_data.get("checkoutPayloads", {})
     charges = payloads.get("fareBreakdown", {}).get("charges", [])
 
@@ -250,7 +256,7 @@ def _parse_checkout(checkout_data: dict, product: Product, store_id: str, store_
         delivery_fee=delivery_fee,
         service_fee=service_fee,
         total=total,
-        deep_link=f"https://www.ubereats.com/mx/store/store/{store_id}",
+        deep_link=deep_link or f"https://www.ubereats.com/mx/store/store/{store_id}",
         store_name=store_name,
         store_address=store_address,
     )
