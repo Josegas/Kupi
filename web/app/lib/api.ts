@@ -36,6 +36,16 @@ export interface CombinedProduct {
   ubereats_product_id: string;
 }
 
+function parseDetail(detail: unknown, status: number): string {
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    const msgs = detail.map((d) => (typeof d?.msg === "string" ? d.msg : JSON.stringify(d)));
+    return msgs.join(", ");
+  }
+  if (detail && typeof detail === "object") return JSON.stringify(detail);
+  return `Error ${status}`;
+}
+
 export async function fetchCombinedMenu(
   rappi_store_id: string,
   ubereats_store_id: string,
@@ -48,7 +58,7 @@ export async function fetchCombinedMenu(
   const res = await fetch(`${API_URL}/menu/combined?${params}`);
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body?.detail ?? `Error ${res.status}`);
+    throw new Error(parseDetail(body?.detail, res.status));
   }
   const data = await res.json();
   return data.products as CombinedProduct[];
@@ -62,7 +72,7 @@ export async function compareProducts(req: CompareRequest): Promise<QuoteRespons
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body?.detail ?? `Error ${res.status}`);
+    throw new Error(parseDetail(body?.detail, res.status));
   }
   return res.json();
 }

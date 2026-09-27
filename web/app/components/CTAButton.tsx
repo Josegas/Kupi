@@ -1,4 +1,6 @@
+"use client";
 import { ArrowRight } from "lucide-react";
+import { useLang } from "../lib/i18n";
 
 interface Props {
   platform: string;
@@ -13,8 +15,9 @@ const PLATFORM_LABELS: Record<string, string> = {
 };
 
 export default function CTAButton({ platform, total, href }: Props) {
+  const { t } = useLang();
   return (
-    <div className="fixed bottom-0 left-0 right-0 bg-[var(--surface)] border-t border-[var(--border)] px-6 py-4">
+    <div className="kupi-cta-bar fixed bottom-0 left-0 right-0 bg-[var(--surface)] border-t border-[var(--border)] px-6 py-4">
       <div className="max-w-6xl mx-auto">
         <a
           href={href}
@@ -22,7 +25,7 @@ export default function CTAButton({ platform, total, href }: Props) {
           rel="noopener noreferrer"
           className="kupi-btn flex items-center justify-center gap-2 w-full h-13 rounded-2xl bg-[var(--savings)] text-white text-[15px] font-bold shadow-[0_4px_12px_rgba(21,128,61,0.25)] select-none"
         >
-          Ir a {PLATFORM_LABELS[platform] ?? platform} · ${total.toFixed(2)}
+          {t.compare.goTo} {PLATFORM_LABELS[platform] ?? platform} · ${total.toFixed(2)}
           <ArrowRight size={16} />
         </a>
       </div>

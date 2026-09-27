@@ -1,48 +1,44 @@
-import TopNav from "./components/TopNav";
-import CategoryChips from "./components/CategoryChips";
-import RestaurantCard from "./components/RestaurantCard";
-import { RESTAURANTS } from "./lib/restaurants";
+import KupiLogo from "./components/KupiLogo";
+import LandingHero from "./components/LandingHero";
+import CursorGlow from "./components/CursorGlow";
+import LandingMarquee from "./components/LandingMarquee";
+import LanguageToggle from "./components/LanguageToggle";
 
-export default function Home() {
+export default function Landing() {
   return (
-    <div className="min-h-screen bg-[var(--bg)] transition-colors duration-300">
-      <TopNav />
-      <main className="max-w-6xl mx-auto px-12 py-10">
-        {/* Hero */}
-        <div className="mb-8">
-          <h1
-            className="hero-title text-[26px] font-bold text-[var(--text-primary)] mb-2"
-            style={{ fontFamily: "var(--font-display)" }}
-          >
-            ¿Qué se te antoja hoy?
-          </h1>
-          <p className="hero-subtitle text-[15px] text-[var(--text-secondary)]">
-            Ve el precio final en Rappi, Uber Eats y DiDi Food antes de pedir. Sin sorpresas.
-          </p>
-        </div>
+    <div
+      className="landing-root min-h-screen flex flex-col overflow-hidden relative"
+      style={{ background: "#0B0B09", color: "#F5F1EC" }}
+    >
+      {/* Cursor glow — sigue al mouse con lag suave */}
+      <CursorGlow />
 
-        {/* Categorías */}
-        <div className="hero-chips mb-8">
-          <CategoryChips />
-        </div>
+      {/* Fondos decorativos */}
+      <div className="landing-orb-orange" aria-hidden />
+      <div className="landing-orb-green"  aria-hidden />
+      <div className="landing-grain"      aria-hidden />
 
-        {/* Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {RESTAURANTS.map((r) => (
-            <div key={r.id} className="stagger-item">
-              <RestaurantCard
-                id={r.id}
-                name={r.name}
-                cuisine={r.cuisine}
-                rating={r.rating}
-                fromPrice={r.fromPrice}
-                platforms={r.platforms}
-                imageUrl={r.imageUrl}
-              />
-            </div>
-          ))}
-        </div>
-      </main>
+      {/* Nav — logo + toggle de idioma */}
+      <nav className="landing-nav relative z-10 flex items-center justify-between px-10 md:px-16 pt-8 pb-4 shrink-0">
+        <KupiLogo size={140} imageSrc="/Kupilogo6.png" textColor="#F5F1EC" />
+        <LanguageToggle dark />
+      </nav>
+
+      {/* Hero animado con GSAP */}
+      <LandingHero />
+
+      {/* Marquee CTA */}
+      <LandingMarquee />
+
+      {/* Footer */}
+      <footer
+        className="landing-footer shrink-0 px-10 md:px-16 py-5 flex items-center justify-end border-t"
+        style={{ borderColor: "rgba(245,241,236,0.05)" }}
+      >
+        <p className="text-[10px]" style={{ color: "rgba(245,241,236,0.15)" }}>
+          Kupi © 2026
+        </p>
+      </footer>
     </div>
   );
 }

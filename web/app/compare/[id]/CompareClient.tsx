@@ -7,6 +7,7 @@ import CTAButton from "../../components/CTAButton";
 import { compareProducts, fetchCombinedMenu, proxyImage, QuoteResponse, CombinedProduct } from "../../lib/api";
 import { RestaurantConfig } from "../../lib/restaurants";
 import { useLocation } from "../../lib/location";
+import { useLang } from "../../lib/i18n";
 
 interface Props {
   restaurant: RestaurantConfig;
@@ -16,6 +17,7 @@ type Step = "selecting" | "comparing";
 
 export default function CompareClient({ restaurant }: Props) {
   const { location } = useLocation();
+  const { t } = useLang();
 
   // — Paso 1: selección de producto —
   const [step, setStep] = useState<Step>("selecting");
@@ -90,7 +92,7 @@ export default function CompareClient({ restaurant }: Props) {
             <ArrowLeft size={20} />
           </button>
         ) : (
-          <Link href="/" className="kupi-link text-[var(--text-secondary)] transition-colors">
+          <Link href="/buscar" className="kupi-link text-[var(--text-secondary)] transition-colors">
             <ArrowLeft size={20} />
           </Link>
         )}
@@ -115,16 +117,16 @@ export default function CompareClient({ restaurant }: Props) {
     return (
       <div className="min-h-screen bg-[var(--bg)]">
         {Header}
-        <div className="max-w-2xl mx-auto px-6 py-8">
+        <div className="compare-step max-w-2xl mx-auto px-6 py-8">
 
           <h2
             className="text-[18px] font-semibold text-[var(--text-primary)] mb-1"
             style={{ fontFamily: "var(--font-display)" }}
           >
-            ¿Qué quieres comparar?
+            {t.compare.selectTitle}
           </h2>
           <p className="text-[13px] text-[var(--text-muted)] mb-6">
-            Solo se muestran productos disponibles en Rappi y Uber Eats.
+            {t.compare.selectSubtitle}
           </p>
 
           {/* Buscador */}
@@ -133,7 +135,7 @@ export default function CompareClient({ restaurant }: Props) {
               <Search size={15} className="text-[var(--text-muted)] shrink-0" />
               <input
                 type="text"
-                placeholder="Buscar producto…"
+                placeholder={t.compare.searchPlaceholder}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="flex-1 bg-transparent text-[14px] text-[var(--text-primary)] placeholder-[var(--text-muted)] outline-none"
@@ -161,7 +163,7 @@ export default function CompareClient({ restaurant }: Props) {
                 onClick={loadMenu}
                 className="text-[13px] font-semibold text-[var(--brand)] underline"
               >
-                Reintentar
+                {t.compare.retry}
               </button>
             </div>
           )}
@@ -171,14 +173,15 @@ export default function CompareClient({ restaurant }: Props) {
             <div className="flex flex-col gap-2">
               {filteredProducts.length === 0 && (
                 <p className="text-[14px] text-[var(--text-muted)] text-center py-8">
-                  {search ? "Sin resultados para tu búsqueda." : "No hay productos disponibles."}
+                  {search ? t.compare.noSearchResults : t.compare.noProducts}
                 </p>
               )}
-              {filteredProducts.map((p) => (
+              {filteredProducts.map((p, i) => (
                 <button
                   key={p.rappi_product_id}
                   onClick={() => handleSelectProduct(p)}
-                  className="kupi-card w-full text-left bg-[var(--surface)] border border-[var(--border)] rounded-xl p-3 flex items-center gap-3 transition-colors hover:border-[var(--brand)]"
+                  className={`kupi-card w-full text-left bg-[var(--surface)] border border-[var(--border)] rounded-xl p-3 flex items-center gap-3 transition-colors hover:border-[var(--brand)]${!search ? " stagger-product" : ""}`}
+                  style={!search ? { animationDelay: `${Math.min(i * 38, 220)}ms` } : undefined}
                 >
                   {/* Thumbnail */}
                   <div className="w-14 h-14 rounded-lg bg-[var(--bg)] shrink-0 overflow-hidden">
@@ -218,7 +221,7 @@ export default function CompareClient({ restaurant }: Props) {
     <div className="min-h-screen bg-[var(--bg)] pb-28">
       {Header}
 
-      <div className="max-w-6xl mx-auto px-12 py-10">
+      <div className="compare-step max-w-6xl mx-auto px-12 py-10">
         <div className="flex flex-col lg:flex-row gap-10">
 
           {/* Panel izquierdo: producto seleccionado */}
@@ -239,7 +242,7 @@ export default function CompareClient({ restaurant }: Props) {
                   />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center text-[var(--text-muted)] text-sm">
-                    Sin imagen
+                    {t.compare.noImage}
                   </div>
                 )}
               </div>
@@ -263,7 +266,7 @@ export default function CompareClient({ restaurant }: Props) {
                 className="text-[16px] font-semibold text-[var(--text-secondary)]"
                 style={{ fontFamily: "var(--font-display)" }}
               >
-                Precio final en cada plataforma
+                {t.compare.priceTitle}
               </h3>
               {!loadingQuotes && (
                 <button
@@ -271,7 +274,7 @@ export default function CompareClient({ restaurant }: Props) {
                   className="flex items-center gap-1.5 text-[13px] text-[var(--text-muted)] hover:text-[var(--brand)] transition-colors kupi-link"
                 >
                   <RefreshCw size={13} />
-                  Actualizar
+                  {t.compare.refresh}
                 </button>
               )}
             </div>
@@ -279,11 +282,50 @@ export default function CompareClient({ restaurant }: Props) {
             {/* Carga */}
             {loadingQuotes && (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {[0, 1].map((i) => (
+                {[
+                  { name: "Rappi", color: "#FF441F" },
+                  { name: "Uber Eats", color: "#06C167" },
+                ].map((p) => (
                   <div
-                    key={i}
-                    className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5 h-52 animate-pulse"
-                  />
+                    key={p.name}
+                    className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5 flex flex-col gap-4"
+                  >
+                    {/* Header visible con branding de la plataforma */}
+                    <div className="flex items-center gap-2">
+                      <div
+                        className="w-2.5 h-2.5 rounded-full animate-pulse"
+                        style={{ background: p.color }}
+                      />
+                      <span className="text-[15px] font-semibold text-[var(--text-primary)]">
+                        {p.name}
+                      </span>
+                    </div>
+
+                    {/* Precio grande en placeholder */}
+                    <div className="flex items-end gap-1">
+                      <div className="h-8 w-28 rounded-lg bg-[var(--bg)] animate-pulse" />
+                    </div>
+
+                    {/* Líneas de desglose */}
+                    <div className="flex flex-col gap-2 pt-1 border-t border-[var(--border)]">
+                      {[80, 60, 48].map((w, i) => (
+                        <div
+                          key={i}
+                          className="h-3 rounded-full bg-[var(--bg)] animate-pulse"
+                          style={{ width: `${w}%`, animationDelay: `${i * 120}ms` }}
+                        />
+                      ))}
+                    </div>
+
+                    {/* Status */}
+                    <p className="text-[11px] text-[var(--text-muted)] flex items-center gap-1.5">
+                      <span
+                        className="inline-block w-1.5 h-1.5 rounded-full animate-pulse"
+                        style={{ background: p.color, animationDuration: "1s" }}
+                      />
+                      {t.compare.checking}
+                    </p>
+                  </div>
                 ))}
               </div>
             )}
@@ -296,7 +338,7 @@ export default function CompareClient({ restaurant }: Props) {
                   onClick={() => selectedProduct && handleSelectProduct(selectedProduct)}
                   className="text-[13px] font-semibold text-[var(--brand)] underline"
                 >
-                  Reintentar
+                  {t.compare.retry}
                 </button>
               </div>
             )}
@@ -304,7 +346,7 @@ export default function CompareClient({ restaurant }: Props) {
             {/* Resultados */}
             {!loadingQuotes && !quotesError && quotes.length > 0 && (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {quotes.map((q) => (
+                {quotes.map((q, i) => (
                   <PlatformCompareCard
                     key={q.platform}
                     platform={q.platform}
@@ -317,6 +359,7 @@ export default function CompareClient({ restaurant }: Props) {
                     storeAddress={q.store_address}
                     isCheapest={cheapest !== null && q.platform === cheapest.platform}
                     approximate={q.platform === "ubereats"}
+                    cardIndex={i}
                     onSelect={() => setSelectedQuote(q)}
                   />
                 ))}

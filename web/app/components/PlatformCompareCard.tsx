@@ -1,4 +1,6 @@
+"use client";
 import { ArrowRight } from "lucide-react";
+import { useLang } from "../lib/i18n";
 
 interface Props {
   platform: string;
@@ -11,6 +13,7 @@ interface Props {
   storeAddress?: string;
   isCheapest: boolean;
   approximate?: boolean;
+  cardIndex?: number;
   onSelect: () => void;
 }
 
@@ -37,8 +40,11 @@ export default function PlatformCompareCard({
   storeAddress,
   isCheapest,
   approximate,
+  cardIndex = 0,
   onSelect,
 }: Props) {
+  const { t } = useLang();
+  const badgeDelay = cardIndex * 80 + 80 + 360 + 60;
   return (
     <div
       onClick={onSelect}
@@ -63,8 +69,11 @@ export default function PlatformCompareCard({
           )}
         </div>
         {isCheapest && (
-          <span className="badge-cheapest text-[11px] font-bold px-2.5 py-1 rounded-full bg-[var(--savings)] text-white">
-            Más barato
+          <span
+            className="badge-cheapest text-[11px] font-bold px-2.5 py-1 rounded-full bg-[var(--savings)] text-white"
+            style={{ animationDelay: `${badgeDelay}ms` }}
+          >
+            {t.compare.cheapest}
           </span>
         )}
       </div>
@@ -90,36 +99,36 @@ export default function PlatformCompareCard({
       {/* Desglose */}
       <div className="flex flex-col gap-1.5 text-[13px]">
         <div className="flex justify-between text-[var(--text-secondary)]">
-          <span>Producto</span>
+          <span>{t.compare.product}</span>
           <span>${productPrice.toFixed(2)}</span>
         </div>
         <div className="flex justify-between text-[var(--text-secondary)]">
-          <span>Envío</span>
+          <span>{t.compare.delivery}</span>
           <span>${deliveryFee.toFixed(2)}</span>
         </div>
         {serviceFee > 0 && (
           <div className="flex justify-between text-[var(--text-secondary)]">
-            <span>Cuota de servicio</span>
+            <span>{t.compare.serviceFee}</span>
             <span>${serviceFee.toFixed(2)}</span>
           </div>
         )}
         <div className="border-t border-[var(--border)] pt-1.5 flex justify-between font-semibold text-[var(--text-primary)]">
-          <span>Total</span>
+          <span>{t.compare.total}</span>
           <span>${total.toFixed(2)}</span>
         </div>
       </div>
 
       {approximate && (
         <p className="text-[11px] text-[var(--text-muted)] leading-snug -mt-1">
-          El precio puede variar algunos pesos.{" "}
+          {t.compare.approximate}{" "}
           <span className="font-medium text-[var(--text-secondary)]">
-            La plataforma más barata sí es real.
+            {t.compare.approximateBold}
           </span>
         </p>
       )}
 
       <button className="flex items-center justify-center gap-2 text-[13px] font-semibold text-[var(--brand)] mt-auto">
-        Ver en {PLATFORM_LABELS[platform]} <ArrowRight size={14} />
+        {t.compare.viewOn} {PLATFORM_LABELS[platform]} <ArrowRight size={14} />
       </button>
     </div>
   );

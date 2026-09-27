@@ -121,6 +121,11 @@ body {
   100% { transform: scale(1); opacity: 1; }
 }
 
+@keyframes slideUp {
+  from { transform: translateY(20px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+
 /* ── Entrada orquestada en página de inicio ───────────────────── */
 .hero-title {
   opacity: 0;
@@ -167,12 +172,171 @@ body {
 .compare-card:nth-child(2) { animation-delay: 160ms; }
 .compare-card:nth-child(3) { animation-delay: 240ms; }
 
-/* Badge "Más barato" aparece después de que llegaron las cards */
+/* Badge "Más barato" - el delay se controla inline desde el componente (depende del índice de la card) */
 .badge-cheapest {
   display: inline-block;
   opacity: 0;
-  animation: badgePop 380ms var(--ease-out) forwards;
-  animation-delay: 500ms;
+  animation: badgePop 380ms var(--ease-out) both;
+}
+
+/* ── Logo adaptable a fondo claro/oscuro ─────────────────────── */
+/* En fondo claro: multiply elimina el blanco del PNG, deja texto oscuro */
+.kupi-logo-light {
+  mix-blend-mode: multiply;
+}
+/* En modo noche: invert + brillo para que las letras salgan blancas */
+[data-theme="noche"] .kupi-logo-light {
+  mix-blend-mode: normal;
+  filter: invert(1) brightness(1.8);
+}
+/* En landing (siempre oscuro): siempre invert */
+.kupi-logo-dark {
+  filter: invert(1) brightness(1.8);
+}
+
+/* ── Landing: orb de fondo ────────────────────────────────────── */
+@keyframes orbPulse {
+  0%, 100% { opacity: 0.7;  transform: scale(1); }
+  50%       { opacity: 1;   transform: scale(1.18); }
+}
+@keyframes orbPulse2 {
+  0%, 100% { opacity: 0.4;  transform: scale(1); }
+  50%       { opacity: 0.7; transform: scale(1.12); }
+}
+
+.landing-orb-orange {
+  position: absolute;
+  width: 700px;
+  height: 700px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(194,65,12,0.18) 0%, transparent 65%);
+  bottom: -180px;
+  right: -120px;
+  pointer-events: none;
+  animation: orbPulse 7s ease-in-out infinite;
+}
+.landing-orb-green {
+  position: absolute;
+  width: 500px;
+  height: 500px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(21,128,61,0.10) 0%, transparent 65%);
+  top: -100px;
+  left: -80px;
+  pointer-events: none;
+  animation: orbPulse2 9s ease-in-out infinite;
+}
+
+/* ── Landing: grain ───────────────────────────────────────────── */
+.landing-grain {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.045;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.88' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23g)'/%3E%3C/svg%3E");
+  background-size: 220px;
+}
+
+/* ── Landing: datos flotantes decorativos ─────────────────────── */
+@keyframes floatDrift {
+  0%   { transform: translateY(0px);   opacity: 0;    }
+  8%   { opacity: 1; }
+  92%  { opacity: 0.7; }
+  100% { transform: translateY(-28px); opacity: 0;    }
+}
+.landing-float-row {
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  color: rgba(245,241,236,0.09);
+  white-space: nowrap;
+  text-transform: uppercase;
+  animation: floatDrift 14s ease-in-out infinite;
+}
+.landing-float-row:nth-child(2) { animation-delay: 4s;  animation-duration: 17s; }
+.landing-float-row:nth-child(3) { animation-delay: 8s;  animation-duration: 12s; }
+
+/* ── Landing: marquee CTA ─────────────────────────────────────── */
+@keyframes marquee {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+/* ── Landing: responsivo móvil ────────────────────────────────── */
+@media (max-width: 640px) {
+  .landing-orb-orange { width: 350px; height: 350px; bottom: -80px; right: -80px; }
+  .landing-orb-green  { width: 260px; height: 260px; }
+}
+
+.landing-marquee-link {
+  display: block;
+  border-top: 1px solid rgba(245,241,236,0.07);
+  overflow: hidden;
+  cursor: pointer;
+  position: relative;
+  z-index: 10;
+  text-decoration: none;
+}
+.landing-marquee-outer {
+  overflow: hidden;
+  padding: 22px 0;
+}
+.landing-marquee-track {
+  display: flex;
+  width: max-content;
+  animation: marquee 28s linear infinite;
+}
+.landing-marquee-link:hover .landing-marquee-track {
+  animation-play-state: paused;
+}
+.landing-marquee-item {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(245,241,236,0.3);
+  padding: 0 48px;
+  white-space: nowrap;
+  transition: color 300ms ease;
+  font-family: var(--font-display);
+}
+.landing-marquee-link:hover .landing-marquee-item {
+  color: rgba(245,241,236,0.7);
+}
+.landing-marquee-accent {
+  color: #C2410C;
+  margin: 0 4px;
+}
+
+/* ── Landing: entradas animadas ───────────────────────────────── */
+.landing-nav    { opacity: 0; animation: fadeIn 600ms ease forwards; animation-delay: 0ms; }
+.landing-eyebrow{ opacity: 0; animation: fadeUp 500ms var(--ease-out) forwards; animation-delay: 200ms; }
+.landing-line   { opacity: 0; animation: fadeIn 400ms ease forwards; animation-delay: 350ms; transform-origin: left center; }
+.landing-headline { opacity: 0; animation: fadeUp 800ms var(--ease-out) forwards; animation-delay: 420ms; }
+.landing-body   { opacity: 0; animation: fadeUp 500ms var(--ease-out) forwards; animation-delay: 650ms; }
+.landing-float  { opacity: 0; animation: fadeIn 600ms ease forwards; animation-delay: 900ms; }
+.landing-marquee-link { opacity: 0; animation: fadeIn 500ms ease forwards; animation-delay: 1100ms; }
+.landing-footer { opacity: 0; animation: fadeIn 400ms ease forwards; animation-delay: 1000ms; }
+
+@media (hover: hover) and (pointer: fine) {
+  .landing-cta-pill { transition: background 200ms ease; }
+  .landing-cta-pill:hover { background: rgba(245,241,236,0.07); }
+}
+
+/* ── CTA bottom bar ───────────────────────────────────────────── */
+.kupi-cta-bar {
+  animation: slideUp 300ms var(--ease-out) forwards;
+}
+
+/* ── Fade entre pasos de selección / comparación ─────────────── */
+.compare-step {
+  opacity: 0;
+  animation: fadeIn 220ms var(--ease-out) forwards;
+}
+
+/* ── Stagger de entrada en lista de productos ─────────────────── */
+.stagger-product {
+  opacity: 0;
+  transform: translateY(6px);
+  animation: fadeUp 240ms var(--ease-out) forwards;
 }
 
 /* ── Prefers-reduced-motion ───────────────────────────────────── */
@@ -181,7 +345,12 @@ body {
     transition: none;
   }
   .stagger-item, .hero-title, .hero-subtitle, .hero-chips,
-  .compare-card, .badge-cheapest {
+  .compare-card, .badge-cheapest, .kupi-cta-bar,
+  .compare-step, .stagger-product,
+  .landing-orb-orange, .landing-orb-green, .landing-float-row { animation: none; }
+  .landing-marquee-track { animation: none; }
+  .landing-nav, .landing-eyebrow, .landing-line, .landing-float,
+  .landing-headline, .landing-body, .landing-marquee-link, .landing-footer {
     animation: none;
     opacity: 1;
     transform: none;

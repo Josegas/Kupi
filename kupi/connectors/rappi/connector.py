@@ -84,7 +84,9 @@ class RappiConnector(BaseConnector):
         delivery_fee = float(data.get("delivery_price", 0))
         eta = data.get("eta")
         eta_minutes = int("".join(filter(str.isdigit, str(eta)))) if eta else None
-        store_name = data.get("name", "")
+        raw_name = data.get("name", "")
+        # Rappi devuelve el nombre como "41230063 - Little Caesars Nicolas Bravo" — quitar el prefijo numérico
+        store_name = raw_name.split(" - ", 1)[-1] if " - " in raw_name else raw_name
         store_address = data.get("address", "")
 
         # Siempre intentar checkout real para obtener envío y service fee con promos aplicadas
@@ -130,7 +132,8 @@ class RappiConnector(BaseConnector):
           2. POST /v1/restaurant/recalculate - recalcula precios y fees
           3. GET  /v1/restaurant/summary-v2  - desglose completo (envío, servicio, descuentos)
         """
-        store_name = store_data.get("name", "")
+        raw_name = store_data.get("name", "")
+        store_name = raw_name.split(" - ", 1)[-1] if " - " in raw_name else raw_name
         store_address = store_data.get("address", "")
 
         # Extraer partner_id del store si está disponible, sino usar el store_id

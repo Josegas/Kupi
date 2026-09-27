@@ -1,4 +1,19 @@
-export default function KupiLogo({ size = 44 }: { size?: number }) {
+export default function KupiLogo({ size = 44, textColor, imageSrc }: { size?: number; textColor?: string; imageSrc?: string }) {
+  if (imageSrc) {
+    // kupi-logo-dark  → landing u otros fondos siempre oscuros (invert + brillo)
+    // kupi-logo-light → nav/buscar: multiply en día, invert en noche (via CSS)
+    const logoClass = textColor === "#F5F1EC" ? "kupi-logo-dark" : "kupi-logo-light";
+    // eslint-disable-next-line @next/next/no-img-element
+    return (
+      <img
+        src={imageSrc}
+        alt="Kupi"
+        className={logoClass}
+        style={{ height: size, width: "auto", objectFit: "contain" }}
+      />
+    );
+  }
+
   return (
     <div className="flex items-center gap-2.5 shrink-0">
       {/* Ícono SVG - colores fijos, se ven bien en ambos temas */}
@@ -31,7 +46,7 @@ export default function KupiLogo({ size = 44 }: { size?: number }) {
       <span
         style={{
           fontFamily: "var(--font-display)",
-          color: "var(--text-primary)",
+          color: textColor ?? "var(--text-primary)",
           fontSize: `${size * 0.52}px`,
           fontWeight: 700,
           letterSpacing: "-0.03em",

@@ -1,12 +1,21 @@
 "use client";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Search, MapPin, Loader2, X } from "lucide-react";
+import Link from "next/link";
 import KupiLogo from "./KupiLogo";
 import ThemeToggle from "./ThemeToggle";
 import { useLocation, searchAddress, GeoSuggestion } from "../lib/location";
+import { useLang } from "../lib/i18n";
+import LanguageToggle from "./LanguageToggle";
 
-export default function TopNav() {
+interface TopNavProps {
+  search?: string;
+  onSearch?: (v: string) => void;
+}
+
+export default function TopNav({ search, onSearch }: TopNavProps = {}) {
   const { location, setLocation } = useLocation();
+  const { t } = useLang();
   const [editing, setEditing] = useState(false);
   const [input, setInput] = useState("");
   const [suggestions, setSuggestions] = useState<GeoSuggestion[]>([]);
@@ -63,14 +72,19 @@ export default function TopNav() {
     <nav className="bg-[var(--surface)] border-b border-[var(--border)] sticky top-0 z-10 transition-colors duration-300">
       <div className="max-w-6xl mx-auto px-12 h-20 flex items-center gap-6">
         {/* Logo */}
-        <KupiLogo size={40} />
+        <Link href="/buscar" className="shrink-0">
+          <KupiLogo size={130} imageSrc="/Kupilogo6.png" />
+        </Link>
 
         {/* Buscador */}
         <div className="kupi-input flex-1 flex items-center gap-2 border border-[var(--border)] rounded-xl px-4 h-10 bg-[var(--bg)]">
           <Search size={16} className="text-[var(--text-muted)] shrink-0" />
           <input
             type="text"
-            placeholder="Busca un restaurante o platillo..."
+            placeholder={t.buscar.searchPlaceholder}
+            value={search ?? ""}
+            onChange={onSearch ? (e) => onSearch(e.target.value) : undefined}
+            readOnly={!onSearch}
             className="flex-1 bg-transparent outline-none text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
           />
         </div>
@@ -85,7 +99,7 @@ export default function TopNav() {
                 type="text"
                 value={input}
                 onChange={(e) => handleInput(e.target.value)}
-                placeholder="Colonia, fraccionamiento, plaza o avenida..."
+                placeholder={t.nav.locationPlaceholder}
                 className="flex-1 bg-transparent outline-none text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
               />
               {searching
@@ -98,8 +112,8 @@ export default function TopNav() {
             {input.trim().length === 0 && (
               <div className="absolute top-full left-0 mt-1 w-full min-w-[320px] bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-lg px-4 py-3 z-50">
                 <p className="text-[12px] text-[var(--text-muted)] leading-relaxed">
-                  Escribe tu <span className="text-[var(--text-secondary)] font-medium">colonia, fraccionamiento, plaza comercial o avenida</span>.<br />
-                  Ej: <span className="text-[var(--text-secondary)]">Humaya</span>, <span className="text-[var(--text-secondary)]">Tres Ríos</span>, <span className="text-[var(--text-secondary)]">Plaza Forum</span>, <span className="text-[var(--text-secondary)]">Blvd. Enrique Félix Castro</span>
+                  {t.nav.locationHint} <span className="text-[var(--text-secondary)] font-medium">{t.nav.locationHintBold}</span>.<br />
+                  {t.nav.locationExamples} <span className="text-[var(--text-secondary)]">Humaya</span>, <span className="text-[var(--text-secondary)]">Tres Ríos</span>, <span className="text-[var(--text-secondary)]">Plaza Forum</span>, <span className="text-[var(--text-secondary)]">Blvd. Enrique Félix Castro</span>
                 </p>
               </div>
             )}
@@ -124,7 +138,7 @@ export default function TopNav() {
             {/* Sin resultados - solo cuando terminó de buscar y no hay nada */}
             {!searching && input.trim().length >= 5 && suggestions.length === 0 && (
               <div className="absolute top-full left-0 mt-1 w-full min-w-[300px] bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-lg px-4 py-3 z-50">
-                <span className="text-[13px] text-[var(--text-muted)]">Sin resultados. Prueba con el nombre del fraccionamiento o colonia.</span>
+                <span className="text-[13px] text-[var(--text-muted)]">{t.nav.noResults}</span>
               </div>
             )}
 
@@ -147,6 +161,9 @@ export default function TopNav() {
             <span className="truncate">{location.label}</span>
           </button>
         )}
+
+        {/* Toggle de idioma */}
+        <LanguageToggle />
 
         {/* Toggle de paleta */}
         <ThemeToggle />

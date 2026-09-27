@@ -241,7 +241,7 @@ def _parse_checkout(checkout_data: dict, product: Product, store_id: str, store_
         amount = _parse_money_text(charge.get("value", {}).get("text", ""))
         if fare_id == "eats_fare.delivery_fee":
             delivery_fee = amount
-        elif "service_fee" in fare_id or "basket_dependent_fee" in fare_id:
+        elif "service_fee" in fare_id or "basket_dependent_fee" in fare_id or "tax_and_fees" in fare_id:
             service_fee = amount
 
     # No se ajusta el delivery fee por tier (Basica vs Prioritaria):
