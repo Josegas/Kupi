@@ -127,11 +127,15 @@ def health():
 @app.get("/proxy/image")
 def proxy_image(url: str = Query(...)):
     """Proxy para imágenes con hotlink protection (ej. CDN de Rappi)."""
+    if "ubereats.com" in url or "cloudfront.net" in url or "uber.com" in url:
+        referer = "https://www.ubereats.com/"
+    else:
+        referer = "https://www.rappi.com.mx/"
     try:
         resp = _requests.get(
             url,
             headers={
-                "Referer": "https://www.rappi.com.mx/",
+                "Referer": referer,
                 "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
             },
             timeout=10,

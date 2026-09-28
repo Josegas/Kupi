@@ -39,7 +39,7 @@ export default function RestaurantCard({ id, name, cuisine, rating, fromPrice, p
             </div>
           </div>
           <span className="shrink-0 text-[12px] font-semibold px-2.5 py-1 rounded-full bg-[var(--brand-tint)] text-[var(--brand)]">
-            {platforms} apps
+            Rappi · Uber Eats
           </span>
         </div>
 

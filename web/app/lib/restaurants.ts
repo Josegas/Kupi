@@ -91,7 +91,7 @@ export const RESTAURANTS: RestaurantConfig[] = [
   {
     id: "taqueria-san-juan-culiacan",
     name: "Taquería San Juan",
-    cuisine: "Mexicana",
+    cuisine: "Tacos",
     rating: 4.6,
     platforms: 2,
     fromPrice: 89,

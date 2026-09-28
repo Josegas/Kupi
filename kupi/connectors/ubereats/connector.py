@@ -214,7 +214,7 @@ def _parse_menu(store_data: dict) -> list[Product]:
                     price=item.get("price", 0) / 100,
                     real_price=item.get("price", 0) / 100,  # UberEats no distingue real_price en este endpoint
                     description=item.get("itemDescription", ""),
-                    image_url=item.get("imageURL") or "",
+                    image_url=item.get("imageUrl") or "",
                     section_uuid=section_uuid,
                     subsection_uuid=subsection_uuid,
                 ))
