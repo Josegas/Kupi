@@ -61,9 +61,10 @@ def _normalize_name(name: str) -> str:
     return " ".join(name.split())
 
 
-def _match_products(rappi_products: list, ue_products: list) -> list[dict]:
+def _match_products(rappi_products: list, ue_products: list) -> dict:
     ue_norm = [(p, _normalize_name(p.name)) for p in ue_products]
-    results = []
+    matched = []
+    matched_rappi_ids: set[str] = set()
     seen_ue_ids: set[str] = set()
 
     for rp in rappi_products:
@@ -77,9 +78,15 @@ def _match_products(rappi_products: list, ue_products: list) -> list[dict]:
             if ratio > best_ratio:
                 best_ratio = ratio
                 best_match = up
-        if best_ratio >= 0.55 and best_match:
+        if best_ratio >= 0.72 and best_match:
+            # Rechazar si los precios difieren más del 25% — evita falsos positivos por nombre similar
+            if best_match.price > 0 and rp.price > 0:
+                price_ratio = min(rp.price, best_match.price) / max(rp.price, best_match.price)
+                if price_ratio < 0.75:
+                    continue
+            matched_rappi_ids.add(rp.product_id)
             seen_ue_ids.add(best_match.product_id)
-            results.append({
+            matched.append({
                 "name": rp.name,
                 "description": rp.description,
                 "price": rp.price,
@@ -88,7 +95,28 @@ def _match_products(rappi_products: list, ue_products: list) -> list[dict]:
                 "ubereats_product_id": best_match.product_id,
             })
 
-    return sorted(results, key=lambda x: x["price"])
+    only_rappi = [
+        {"name": p.name, "description": p.description, "price": p.price,
+         "image_url": p.image_url or "", "rappi_product_id": p.product_id, "platform": "rappi"}
+        for p in rappi_products if p.product_id not in matched_rappi_ids
+    ]
+
+    # Deduplicar UberEats por product_id (el mismo producto puede aparecer en varias secciones)
+    seen_ue_exclusive: set[str] = set()
+    only_ubereats = []
+    for p in ue_products:
+        if p.product_id not in seen_ue_ids and p.product_id not in seen_ue_exclusive:
+            seen_ue_exclusive.add(p.product_id)
+            only_ubereats.append({
+                "name": p.name, "description": p.description, "price": p.price,
+                "image_url": p.image_url or "", "ubereats_product_id": p.product_id, "platform": "ubereats"
+            })
+
+    return {
+        "matched": sorted(matched, key=lambda x: x["price"]),
+        "only_rappi": sorted(only_rappi, key=lambda x: x["price"]),
+        "only_ubereats": sorted(only_ubereats, key=lambda x: x["price"]),
+    }
 
 
 @app.get("/health")
@@ -164,8 +192,13 @@ def get_combined_menu(
     if not rappi_products or not ue_products:
         raise HTTPException(status_code=502, detail={"errors": errors})
 
-    matched = _match_products(rappi_products, ue_products)
-    return {"products": matched, "errors": errors}
+    result = _match_products(rappi_products, ue_products)
+    return {
+        "products": result["matched"],
+        "only_rappi": result["only_rappi"],
+        "only_ubereats": result["only_ubereats"],
+        "errors": errors,
+    }
 
 
 @app.post("/compare", response_model=list[QuoteResponse])

@@ -4,7 +4,7 @@ import { ArrowLeft, ArrowRight, RefreshCw, MapPin, Search } from "lucide-react";
 import Link from "next/link";
 import PlatformCompareCard from "../../components/PlatformCompareCard";
 import CTAButton from "../../components/CTAButton";
-import { compareProducts, fetchCombinedMenu, proxyImage, QuoteResponse, CombinedProduct } from "../../lib/api";
+import { compareProducts, fetchCombinedMenu, proxyImage, QuoteResponse, CombinedProduct, ExclusiveProduct } from "../../lib/api";
 import { RestaurantConfig } from "../../lib/restaurants";
 import { useLocation } from "../../lib/location";
 import { useLang } from "../../lib/i18n";
@@ -13,7 +13,17 @@ interface Props {
   restaurant: RestaurantConfig;
 }
 
-type Step = "selecting" | "comparing";
+type Step = "selecting" | "comparing" | "exclusive";
+
+interface ListProduct {
+  name: string;
+  description?: string;
+  price: number;
+  image_url: string;
+  rappi_product_id?: string;
+  ubereats_product_id?: string;
+  exclusivePlatform?: "rappi" | "ubereats";
+}
 
 export default function CompareClient({ restaurant }: Props) {
   const { location } = useLocation();
@@ -21,11 +31,12 @@ export default function CompareClient({ restaurant }: Props) {
 
   // — Paso 1: selección de producto —
   const [step, setStep] = useState<Step>("selecting");
-  const [products, setProducts] = useState<CombinedProduct[]>([]);
+  const [allProducts, setAllProducts] = useState<ListProduct[]>([]);
   const [loadingMenu, setLoadingMenu] = useState(true);
   const [menuError, setMenuError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [selectedProduct, setSelectedProduct] = useState<CombinedProduct | null>(null);
+  const [platformFilter, setPlatformFilter] = useState<"all" | "both" | "rappi" | "ubereats">("all");
+  const [selectedProduct, setSelectedProduct] = useState<ListProduct | null>(null);
 
   // — Paso 2: comparación de precios —
   const [quotes, setQuotes] = useState<QuoteResponse[]>([]);
@@ -42,7 +53,15 @@ export default function CompareClient({ restaurant }: Props) {
       location.lat,
       location.lng,
     )
-      .then(setProducts)
+      .then((data) => {
+        const matched: ListProduct[] = data.products.map((p) => ({ ...p }));
+        const exclusive: ListProduct[] = [
+          ...data.only_rappi.map((p) => ({ ...p, exclusivePlatform: "rappi" as const })),
+          ...data.only_ubereats.map((p) => ({ ...p, exclusivePlatform: "ubereats" as const })),
+        ];
+        const merged = [...matched, ...exclusive].sort((a, b) => a.price - b.price);
+        setAllProducts(merged);
+      })
       .catch((e) => setMenuError(e.message))
       .finally(() => setLoadingMenu(false));
   };
@@ -51,7 +70,7 @@ export default function CompareClient({ restaurant }: Props) {
     loadMenu();
   }, [restaurant, location]);
 
-  const handleSelectProduct = (product: CombinedProduct) => {
+  const handleSelectProduct = (product: ListProduct) => {
     setSelectedProduct(product);
     setStep("comparing");
     setQuotes([]);
@@ -60,8 +79,8 @@ export default function CompareClient({ restaurant }: Props) {
     compareProducts({
       rappi_store_id: restaurant.rappi_store_id,
       ubereats_store_id: restaurant.ubereats_store_id,
-      rappi_product_id: product.rappi_product_id,
-      ubereats_product_id: product.ubereats_product_id,
+      rappi_product_id: product.rappi_product_id ?? "none",
+      ubereats_product_id: product.ubereats_product_id ?? "none",
       lat: location.lat,
       lng: location.lng,
     })
@@ -74,9 +93,15 @@ export default function CompareClient({ restaurant }: Props) {
       .finally(() => setLoadingQuotes(false));
   };
 
-  const filteredProducts = products.filter((p) =>
-    p.name.toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredProducts = allProducts.filter((p) => {
+    const matchesSearch = p.name.toLowerCase().includes(search.toLowerCase());
+    const matchesPlatform =
+      platformFilter === "all" ||
+      (platformFilter === "both" && !p.exclusivePlatform) ||
+      (platformFilter === "rappi" && p.exclusivePlatform === "rappi") ||
+      (platformFilter === "ubereats" && p.exclusivePlatform === "ubereats");
+    return matchesSearch && matchesPlatform;
+  });
 
   const cheapest = quotes[0] ?? null;
 
@@ -129,8 +154,33 @@ export default function CompareClient({ restaurant }: Props) {
             {t.compare.selectSubtitle}
           </p>
 
+          {/* Filtros de plataforma */}
+          {!loadingMenu && !menuError && allProducts.length > 0 && (
+            <div className="flex gap-2 flex-wrap mb-4">
+              {([
+                { key: "all",      label: "Todo" },
+                { key: "both",     label: "Ambas apps" },
+                { key: "rappi",    label: "Solo Rappi" },
+                { key: "ubereats", label: "Solo Uber Eats" },
+              ] as const).map(({ key, label }) => (
+                <button
+                  key={key}
+                  onClick={() => setPlatformFilter(key)}
+                  className="text-[12px] font-semibold px-3 py-1.5 rounded-full border transition-colors"
+                  style={
+                    platformFilter === key
+                      ? { background: "var(--brand)", color: "#fff", borderColor: "var(--brand)" }
+                      : { background: "var(--surface)", color: "var(--text-secondary)", borderColor: "var(--border)" }
+                  }
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+
           {/* Buscador */}
-          {!loadingMenu && !menuError && products.length > 0 && (
+          {!loadingMenu && !menuError && allProducts.length > 0 && (
             <div className="kupi-input flex items-center gap-2 bg-[var(--surface)] border border-[var(--border)] rounded-xl px-4 py-2.5 mb-5 transition-all">
               <Search size={15} className="text-[var(--text-muted)] shrink-0" />
               <input
@@ -176,39 +226,43 @@ export default function CompareClient({ restaurant }: Props) {
                   {search ? t.compare.noSearchResults : t.compare.noProducts}
                 </p>
               )}
-              {filteredProducts.map((p, i) => (
-                <button
-                  key={p.rappi_product_id}
-                  onClick={() => handleSelectProduct(p)}
-                  className={`kupi-card w-full text-left bg-[var(--surface)] border border-[var(--border)] rounded-xl p-3 flex items-center gap-3 transition-colors hover:border-[var(--brand)]${!search ? " stagger-product" : ""}`}
-                  style={!search ? { animationDelay: `${Math.min(i * 38, 220)}ms` } : undefined}
-                >
-                  {/* Thumbnail */}
-                  <div className="w-14 h-14 rounded-lg bg-[var(--bg)] shrink-0 overflow-hidden">
-                    {p.image_url ? (
-                      <img src={proxyImage(p.image_url)} alt={p.name} className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="w-full h-full" />
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[14px] font-semibold text-[var(--text-primary)] leading-tight truncate">
-                      {p.name}
-                    </p>
-                    {p.description && (
-                      <p className="text-[12px] text-[var(--text-muted)] leading-snug mt-0.5 line-clamp-1">
-                        {p.description}
-                      </p>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-3 shrink-0">
-                    <span className="text-[14px] font-bold text-[var(--savings)]">
-                      ${p.price.toFixed(0)}
-                    </span>
-                    <ArrowRight size={15} className="text-[var(--text-muted)]" />
-                  </div>
-                </button>
-              ))}
+              {filteredProducts.map((p, i) => {
+                const PLATFORM_COLORS: Record<string, string> = { rappi: "#FF441F", ubereats: "#06C167" };
+                const PLATFORM_LABELS: Record<string, string> = { rappi: "Rappi", ubereats: "Uber Eats" };
+                return (
+                  <button
+                    key={p.rappi_product_id ?? p.ubereats_product_id}
+                    onClick={() => handleSelectProduct(p)}
+                    className={`kupi-card w-full text-left bg-[var(--surface)] border border-[var(--border)] rounded-xl p-3 flex items-center gap-3 transition-colors hover:border-[var(--brand)]${!search ? " stagger-product" : ""}`}
+                    style={!search ? { animationDelay: `${Math.min(i * 38, 220)}ms` } : undefined}
+                  >
+                    <div className="w-14 h-14 rounded-lg bg-[var(--bg)] shrink-0 overflow-hidden">
+                      {p.image_url ? (
+                        <img src={proxyImage(p.image_url)} alt={p.name} className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full" />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[14px] font-semibold text-[var(--text-primary)] leading-tight truncate">{p.name}</p>
+                      {p.exclusivePlatform ? (
+                        <span
+                          className="inline-block text-[10px] font-bold px-2 py-0.5 rounded-full mt-1"
+                          style={{ background: PLATFORM_COLORS[p.exclusivePlatform] + "22", color: PLATFORM_COLORS[p.exclusivePlatform] }}
+                        >
+                          Solo en {PLATFORM_LABELS[p.exclusivePlatform]}
+                        </span>
+                      ) : p.description ? (
+                        <p className="text-[12px] text-[var(--text-muted)] leading-snug mt-0.5 line-clamp-1">{p.description}</p>
+                      ) : null}
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <span className="text-[14px] font-bold text-[var(--savings)]">${p.price.toFixed(0)}</span>
+                      <ArrowRight size={15} className="text-[var(--text-muted)]" />
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
@@ -343,6 +397,17 @@ export default function CompareClient({ restaurant }: Props) {
               </div>
             )}
 
+            {/* Aviso producto exclusivo */}
+            {!loadingQuotes && !quotesError && quotes.length === 1 && selectedProduct?.exclusivePlatform && (
+              <div className="mb-4 px-4 py-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] text-[13px] text-[var(--text-secondary)]">
+                Este producto solo está disponible en{" "}
+                <span className="font-semibold text-[var(--text-primary)]">
+                  {{ rappi: "Rappi", ubereats: "Uber Eats" }[selectedProduct.exclusivePlatform]}
+                </span>
+                , por lo que no se puede comparar con otras plataformas.
+              </div>
+            )}
+
             {/* Resultados */}
             {!loadingQuotes && !quotesError && quotes.length > 0 && (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -357,7 +422,7 @@ export default function CompareClient({ restaurant }: Props) {
                     etaMinutes={q.eta_minutes ?? undefined}
                     storeName={q.store_name}
                     storeAddress={q.store_address}
-                    isCheapest={cheapest !== null && q.platform === cheapest.platform}
+                    isCheapest={quotes.length > 1 && cheapest !== null && q.platform === cheapest.platform}
                     approximate={q.platform === "ubereats"}
                     cardIndex={i}
                     onSelect={() => setSelectedQuote(q)}

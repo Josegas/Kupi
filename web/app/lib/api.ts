@@ -36,6 +36,22 @@ export interface CombinedProduct {
   ubereats_product_id: string;
 }
 
+export interface ExclusiveProduct {
+  name: string;
+  description: string;
+  price: number;
+  image_url: string;
+  platform: "rappi" | "ubereats";
+  rappi_product_id?: string;
+  ubereats_product_id?: string;
+}
+
+export interface CombinedMenuResponse {
+  products: CombinedProduct[];
+  only_rappi: ExclusiveProduct[];
+  only_ubereats: ExclusiveProduct[];
+}
+
 function parseDetail(detail: unknown, status: number): string {
   if (typeof detail === "string") return detail;
   if (Array.isArray(detail)) {
@@ -51,7 +67,7 @@ export async function fetchCombinedMenu(
   ubereats_store_id: string,
   lat?: number,
   lng?: number,
-): Promise<CombinedProduct[]> {
+): Promise<CombinedMenuResponse> {
   const params = new URLSearchParams({ rappi_store_id, ubereats_store_id });
   if (lat !== undefined) params.set("lat", String(lat));
   if (lng !== undefined) params.set("lng", String(lng));
@@ -60,8 +76,7 @@ export async function fetchCombinedMenu(
     const body = await res.json().catch(() => ({}));
     throw new Error(parseDetail(body?.detail, res.status));
   }
-  const data = await res.json();
-  return data.products as CombinedProduct[];
+  return res.json() as Promise<CombinedMenuResponse>;
 }
 
 export async function compareProducts(req: CompareRequest): Promise<QuoteResponse[]> {
