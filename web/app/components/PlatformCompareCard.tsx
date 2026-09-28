@@ -5,8 +5,8 @@ import { useLang } from "../lib/i18n";
 interface Props {
   platform: string;
   productPrice: number;
-  deliveryFee: number;
-  serviceFee: number;
+  deliveryFee: number | null; // null en DiDi (no disponible fuera de la app)
+  serviceFee: number | null;
   total: number;
   etaMinutes?: number;
   storeName?: string;
@@ -89,12 +89,17 @@ export default function PlatformCompareCard({
       )}
 
       {/* Precio total */}
-      <p
-        className="text-[20px] font-bold"
-        style={{ color: isCheapest ? "var(--savings)" : "var(--text-primary)" }}
-      >
-        ${total.toFixed(2)}
-      </p>
+      <div className="flex items-baseline gap-1">
+        {platform === "didi" && (
+          <span className="text-[12px] text-[var(--text-muted)]">desde</span>
+        )}
+        <p
+          className="text-[20px] font-bold"
+          style={{ color: isCheapest ? "var(--savings)" : "var(--text-primary)" }}
+        >
+          ${total.toFixed(2)}
+        </p>
+      </div>
 
       {/* Desglose */}
       <div className="flex flex-col gap-1.5 text-[13px]">
@@ -104,9 +109,12 @@ export default function PlatformCompareCard({
         </div>
         <div className="flex justify-between text-[var(--text-secondary)]">
           <span>{t.compare.delivery}</span>
-          <span>${deliveryFee.toFixed(2)}</span>
+          {deliveryFee === null
+            ? <span className="text-[var(--text-muted)] italic text-[12px]">ver en app</span>
+            : <span>${deliveryFee.toFixed(2)}</span>
+          }
         </div>
-        {serviceFee > 0 && (
+        {serviceFee !== null && serviceFee > 0 && (
           <div className="flex justify-between text-[var(--text-secondary)]">
             <span>{t.compare.serviceFee}</span>
             <span>${serviceFee.toFixed(2)}</span>
@@ -124,6 +132,12 @@ export default function PlatformCompareCard({
           <span className="font-medium text-[var(--text-secondary)]">
             {t.compare.approximateBold}
           </span>
+        </p>
+      )}
+
+      {platform === "didi" && (
+        <p className="text-[11px] text-[var(--text-muted)] leading-snug -mt-1">
+          Precio de menú. El envío y total final solo aparecen dentro de la app de DiDi.
         </p>
       )}
 

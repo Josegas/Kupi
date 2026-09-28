@@ -8,8 +8,8 @@ export function proxyImage(url: string): string {
 export interface QuoteResponse {
   platform: string;
   product_price: number;
-  delivery_fee: number;
-  service_fee: number;
+  delivery_fee: number | null; // null en DiDi (solo disponible en la app)
+  service_fee: number | null;  // null en DiDi (solo disponible en la app)
   total: number;
   currency: string;
   eta_minutes: number | null;
@@ -25,6 +25,9 @@ export interface CompareRequest {
   ubereats_product_id: string;
   lat?: number;
   lng?: number;
+  // DiDi es opcional: omitir si la sucursal no está en el catálogo
+  didi_store_id?: string | null;
+  didi_product_id?: string | null;
 }
 
 export interface CombinedProduct {
@@ -34,6 +37,7 @@ export interface CombinedProduct {
   image_url: string;
   rappi_product_id: string;
   ubereats_product_id: string;
+  didi_product_id?: string | null;
 }
 
 export interface ExclusiveProduct {
@@ -67,10 +71,12 @@ export async function fetchCombinedMenu(
   ubereats_store_id: string,
   lat?: number,
   lng?: number,
+  didi_store_id?: string | null,
 ): Promise<CombinedMenuResponse> {
   const params = new URLSearchParams({ rappi_store_id, ubereats_store_id });
   if (lat !== undefined) params.set("lat", String(lat));
   if (lng !== undefined) params.set("lng", String(lng));
+  if (didi_store_id) params.set("didi_store_id", didi_store_id);
   const res = await fetch(`${API_URL}/menu/combined?${params}`);
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));

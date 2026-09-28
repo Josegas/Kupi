@@ -20,9 +20,9 @@ class Product:
 class PriceQuote:
     platform: str         # "rappi" | "ubereats" | "didi"
     product_price: float
-    delivery_fee: float
-    service_fee: float
-    total: float
+    delivery_fee: Optional[float]   # None = dato no disponible (DiDi fuera de la app)
+    service_fee: Optional[float]    # None = dato no disponible (DiDi fuera de la app)
+    total: float                    # en DiDi es solo el precio del producto (parcial)
     currency: str = "MXN"
     eta_minutes: Optional[int] = None
     deep_link: str = ""   # URL para abrir la tienda en la app/web de la plataforma

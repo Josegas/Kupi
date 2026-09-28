@@ -22,6 +22,7 @@ interface ListProduct {
   image_url: string;
   rappi_product_id?: string;
   ubereats_product_id?: string;
+  didi_product_id?: string | null;
   exclusivePlatform?: "rappi" | "ubereats";
 }
 

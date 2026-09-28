@@ -11,6 +11,7 @@ from kupi.core.config import DEFAULT_LAT, DEFAULT_LNG
 from kupi.core.models import PriceQuote
 from kupi.connectors.rappi.connector import RappiConnector
 from kupi.connectors.ubereats.connector import UberEatsConnector
+from kupi.connectors.didi.connector import DidiConnector
 
 app = FastAPI(title="Kupi API", version="0.1.0")
 
@@ -23,6 +24,7 @@ app.add_middleware(
 
 rappi = RappiConnector()
 ubereats = UberEatsConnector()
+didi = DidiConnector()
 
 
 # --- Esquemas de request/response ---
@@ -36,13 +38,16 @@ class CompareRequest(BaseModel):
     lng: float = DEFAULT_LNG
     # Toppings de Rappi para simular checkout real (opcional - si no se envían, se usa el precio del menú)
     rappi_toppings: list[dict] | None = None
+    # DiDi es opcional: si se omite, la respuesta solo incluye Rappi y Uber Eats
+    didi_store_id: str | None = None
+    didi_product_id: str | None = None
 
 
 class QuoteResponse(BaseModel):
     platform: str
     product_price: float
-    delivery_fee: float
-    service_fee: float
+    delivery_fee: float | None   # None en DiDi (solo disponible en la app)
+    service_fee: float | None    # None en DiDi (solo disponible en la app)
     total: float
     currency: str
     eta_minutes: int | None
@@ -168,20 +173,52 @@ def get_ubereats_menu(store_id: str, lat: float = DEFAULT_LAT, lng: float = DEFA
     return {"store_id": store_id, "products": [p.__dict__ for p in products]}
 
 
+@app.get("/menu/didi/{store_id}")
+def get_didi_menu(store_id: str):
+    """
+    Menú de una sucursal de DiDi Food por su ID numérico.
+    El ID debe estar registrado en connectors/didi/stores.json.
+    lat/lng no aplican (DiDi usa ciudad fija en la URL).
+    """
+    try:
+        products = didi.fetch_menu(store_id, lat=0, lng=0)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    return {"store_id": store_id, "products": [p.__dict__ for p in products]}
+
+
+@app.get("/didi/stores")
+def list_didi_stores():
+    """Lista todas las sucursales de DiDi disponibles en Culiacán."""
+    from kupi.connectors.didi.connector import _STORES
+    return {
+        "count": len(_STORES),
+        "stores": [
+            {"store_id": sid, "name": info["name"], "url": info["url"]}
+            for sid, info in _STORES.items()
+        ],
+    }
+
+
 @app.get("/menu/combined")
 def get_combined_menu(
     rappi_store_id: str,
     ubereats_store_id: str,
     lat: float = DEFAULT_LAT,
     lng: float = DEFAULT_LNG,
+    didi_store_id: str | None = None,
 ):
     """
-    Jala el menú de ambas plataformas y devuelve los productos que existen en las dos,
-    haciendo matching por nombre normalizado.
+    Jala el menú de Rappi y Uber Eats, hace matching por nombre normalizado,
+    y opcionalmente también cruza con DiDi (si se pasa didi_store_id).
+    Cada producto en 'matched' incluye didi_product_id si hay coincidencia.
     """
     errors: list[str] = []
     rappi_products = []
     ue_products = []
+    didi_products = []
 
     try:
         rappi_products = rappi.fetch_menu(rappi_store_id, lat, lng)
@@ -193,10 +230,35 @@ def get_combined_menu(
     except Exception as e:
         errors.append(f"UberEats: {e}")
 
+    if didi_store_id:
+        try:
+            didi_products = didi.fetch_menu(didi_store_id, lat=0, lng=0)
+        except Exception as e:
+            errors.append(f"DiDi: {e}")
+
     if not rappi_products or not ue_products:
         raise HTTPException(status_code=502, detail={"errors": errors})
 
     result = _match_products(rappi_products, ue_products)
+
+    # Cruzar productos matched con DiDi por nombre normalizado
+    if didi_products:
+        didi_norm = [(_normalize_name(p.name), p) for p in didi_products]
+        for product in result["matched"]:
+            rp_norm = _normalize_name(product["name"])
+            best_id: str | None = None
+            best_ratio = 0.0
+            for dn, dp in didi_norm:
+                ratio = difflib.SequenceMatcher(None, rp_norm, dn).ratio()
+                if ratio > best_ratio:
+                    best_ratio = ratio
+                    best_id = dp.product_id
+            # Umbral más bajo que Rappi↔UberEats porque los nombres difieren más entre plataformas
+            if best_ratio >= 0.55 and best_id:
+                product["didi_product_id"] = best_id
+            else:
+                product["didi_product_id"] = None
+
     return {
         "products": result["matched"],
         "only_rappi": result["only_rappi"],
@@ -239,8 +301,23 @@ def compare(req: CompareRequest):
     except Exception as e:
         errors.append(f"Uber Eats: {e}")
 
+    # DiDi (opcional — solo si se envían didi_store_id y didi_product_id)
+    if req.didi_store_id and req.didi_product_id:
+        try:
+            didi_products = didi.fetch_menu(req.didi_store_id, req.lat, req.lng)
+            didi_product = next(
+                (p for p in didi_products if p.product_id == req.didi_product_id), None
+            )
+            if didi_product:
+                quotes.append(didi.fetch_price(req.didi_store_id, didi_product, req.lat, req.lng))
+            else:
+                errors.append(f"Producto {req.didi_product_id} no encontrado en DiDi")
+        except Exception as e:
+            errors.append(f"DiDi: {e}")
+
     if not quotes:
         raise HTTPException(status_code=502, detail={"errors": errors})
 
+    # Ordenar por total; DiDi va al final si su total es parcial (sin envío)
     quotes.sort(key=lambda q: q.total)
     return [QuoteResponse(**q.__dict__) for q in quotes]
