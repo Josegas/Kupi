@@ -69,6 +69,7 @@ class RappiConnector(BaseConnector):
                     real_price=float(p.get("real_price", p["price"])),
                     description=p.get("description", ""),
                     image_url=_rappi_image(p.get("image", "")),
+                    has_variants=bool(p.get("need_topping")),
                 ))
         return products
 
@@ -88,6 +89,7 @@ class RappiConnector(BaseConnector):
         # Rappi devuelve el nombre como "41230063 - Little Caesars Nicolas Bravo" — quitar el prefijo numérico
         store_name = raw_name.split(" - ", 1)[-1] if " - " in raw_name else raw_name
         store_address = data.get("address", "")
+        is_open = data.get("status") == "OPEN"
 
         # Siempre intentar checkout real para obtener envío y service fee con promos aplicadas
         try:
@@ -99,6 +101,7 @@ class RappiConnector(BaseConnector):
                 toppings=toppings or [],
                 store_data=data,
                 eta_minutes=eta_minutes,
+                is_open=is_open,
             )
         except Exception as e:
             # Si falla (ej. producto con personalización obligatoria), caer al precio del menú
@@ -114,6 +117,8 @@ class RappiConnector(BaseConnector):
             deep_link=f"https://www.rappi.com.mx/restaurantes/{store_id}?product={product.product_id}",
             store_name=store_name,
             store_address=store_address,
+            variant_label="Precio base" if product.has_variants else "",
+            is_open=is_open,
         )
 
     def _fetch_checkout(
@@ -125,6 +130,7 @@ class RappiConnector(BaseConnector):
         toppings: list[dict],
         store_data: dict,
         eta_minutes: int | None,
+        is_open: bool = True,
     ) -> PriceQuote:
         """
         Simula el checkout de Rappi en 3 pasos para obtener el desglose real:
@@ -200,7 +206,9 @@ class RappiConnector(BaseConnector):
         r3.raise_for_status()
         summary = r3.json()
 
-        return _parse_summary(summary, product, store_id, store_name, store_address, eta_minutes)
+        return _parse_summary(summary, product, store_id, store_name, store_address, eta_minutes,
+                               variant_label="Precio base" if product.has_variants else "",
+                               is_open=is_open)
 
 
 def _parse_summary(
@@ -210,6 +218,8 @@ def _parse_summary(
     store_name: str,
     store_address: str,
     eta_minutes: int | None,
+    variant_label: str = "",
+    is_open: bool = True,
 ) -> PriceQuote:
     """
     Parsea summary-v2 usando los sub_value del Total (más precisos que fees[]):
@@ -246,4 +256,6 @@ def _parse_summary(
         deep_link=f"https://www.rappi.com.mx/restaurantes/{store_id}?product={product.product_id}",
         store_name=store_name,
         store_address=store_address,
+        variant_label=variant_label,
+        is_open=is_open,
     )

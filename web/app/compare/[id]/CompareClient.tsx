@@ -426,6 +426,9 @@ export default function CompareClient({ restaurant }: Props) {
                     isCheapest={quotes.length > 1 && cheapest !== null && q.platform === cheapest.platform}
                     approximate={q.platform === "ubereats"}
                     cardIndex={i}
+                    variantLabel={q.variant_label || undefined}
+                    isOpen={q.is_open}
+                    opensAt={q.opens_at || undefined}
                     onSelect={() => setSelectedQuote(q)}
                   />
                 ))}

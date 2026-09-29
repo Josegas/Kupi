@@ -17,7 +17,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Kupi",
-  description: "Ve el precio final con envío en Rappi, Uber Eats y DiDi Food antes de pedir. Sin sorpresas.",
+  description: "Ve el precio final con envío en Rappi y Uber Eats antes de pedir. Sin sorpresas.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

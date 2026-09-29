@@ -14,6 +14,7 @@ class Product:
     section_uuid: str = ""
     subsection_uuid: str = ""
     customizations: dict = field(default_factory=dict)
+    has_variants: bool = False   # True si el producto tiene opciones obligatorias (tamaño, cantidad)
 
 
 @dataclass
@@ -28,3 +29,6 @@ class PriceQuote:
     deep_link: str = ""   # URL para abrir la tienda en la app/web de la plataforma
     store_name: str = ""  # nombre de la sucursal en esa plataforma
     store_address: str = ""  # dirección de la sucursal
+    variant_label: str = ""  # etiqueta de la variante cotizada, ej. "6 Piezas" o "Precio base"
+    is_open: bool = True  # False si el restaurante está cerrado ahora (fuera de horario)
+    opens_at: str = ""    # mensaje de apertura si está cerrado, ej. "Abre: 10:00 a.m."

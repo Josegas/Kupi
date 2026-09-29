@@ -7,13 +7,13 @@ export const T = {
   es: {
     landing: {
       eyebrow: "Metabuscador de precios · México",
-      body: "Compara el costo final con envío en Rappi, Uber Eats y DiDi Food. Sin abrir tres apps.",
+      body: "Compara el costo final con envío en Rappi y Uber Eats. Sin abrir dos apps.",
       enter: "Entrar",
-      marquee: ["Rappi", "Uber Eats", "DiDi Food", "¿Cuál es más barato?", "Rappi", "Uber Eats", "DiDi Food", "Tú decides"],
+      marquee: ["Rappi", "Uber Eats", "¿Cuál es más barato?", "Rappi", "Uber Eats", "Tú decides"],
     },
     buscar: {
       title: "¿Qué se te antoja hoy?",
-      subtitle: "Ve el precio final en Rappi, Uber Eats y DiDi Food antes de pedir. Sin sorpresas.",
+      subtitle: "Ve el precio final en Rappi y Uber Eats antes de pedir. Sin sorpresas.",
       searchPlaceholder: "Busca un restaurante o platillo...",
       allCategory: "Todo",
       noResults: "Sin resultados para",
@@ -63,13 +63,13 @@ export const T = {
   en: {
     landing: {
       eyebrow: "Food price comparison · Mexico",
-      body: "Compare the final cost with delivery on Rappi, Uber Eats and DiDi Food. Without opening three apps.",
+      body: "Compare the final cost with delivery on Rappi and Uber Eats. Without opening two apps.",
       enter: "Enter",
-      marquee: ["Rappi", "Uber Eats", "DiDi Food", "Which is cheaper?", "Rappi", "Uber Eats", "DiDi Food", "You decide"],
+      marquee: ["Rappi", "Uber Eats", "Which is cheaper?", "Rappi", "Uber Eats", "You decide"],
     },
     buscar: {
       title: "What are you craving today?",
-      subtitle: "See the final price on Rappi, Uber Eats and DiDi Food before ordering. No surprises.",
+      subtitle: "See the final price on Rappi and Uber Eats before ordering. No surprises.",
       searchPlaceholder: "Search a restaurant or dish...",
       allCategory: "All",
       noResults: "No results for",

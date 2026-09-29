@@ -1,12 +1,16 @@
 import json
+import os
 import urllib.parse
 import uuid as uuid_lib
+import requests as _requests
 from curl_cffi import requests
 from kupi.connectors.base import BaseConnector
 from kupi.core.config import UBEREATS_COOKIE_STRING
 from kupi.core.models import Product, PriceQuote
 
 _BASE_URL = "https://www.ubereats.com/_p/api"
+_WORKER_URL = os.getenv("UBEREATS_WORKER_URL", "")
+_WORKER_SECRET = os.getenv("UBEREATS_WORKER_SECRET", "")
 
 _HEADERS_BASE = {
     "accept": "*/*",
@@ -37,8 +41,21 @@ def _parse_cookies(cookie_string: str) -> dict[str, str]:
     return cookies
 
 
+def _build_headers(lat: float, lng: float, referer: str = "https://www.ubereats.com/") -> dict:
+    """Construye el dict de headers con cookies y ubicación listos."""
+    return {
+        **_HEADERS_BASE,
+        "cookie": UBEREATS_COOKIE_STRING,
+        "referer": referer,
+        "x-uber-device-location-latitude": str(lat),
+        "x-uber-device-location-longitude": str(lng),
+        "x-uber-target-location-latitude": str(lat),
+        "x-uber-target-location-longitude": str(lng),
+    }
+
+
 def _build_session(lat: float, lng: float) -> requests.Session:
-    """Crea una sesión con cookies y headers de ubicación listos."""
+    """Crea una sesión con cookies y headers de ubicación listos (uso local)."""
     session = requests.Session()
     cookies = _parse_cookies(UBEREATS_COOKIE_STRING)
     for name, value in cookies.items():
@@ -53,6 +70,67 @@ def _build_session(lat: float, lng: float) -> requests.Session:
     return session
 
 
+def _auto_customizations(store_id: str, product: Product, lat: float, lng: float) -> tuple[dict, str]:
+    """
+    Llama a getMenuItemV1 para obtener los grupos de personalización del producto
+    y auto-selecciona la primera opción de cada grupo requerido.
+    Devuelve (customizations_dict, variant_label) donde variant_label es el nombre
+    de la primera opción seleccionada, ej. "6 Piezas".
+    """
+    headers = _build_headers(lat, lng)
+    body = {
+        "sectionUuid": product.section_uuid,
+        "subsectionUuid": product.subsection_uuid,
+        "itemUuid": product.product_id,
+        "storeUuid": store_id,
+    }
+    try:
+        data = _call_ubereats(f"{_BASE_URL}/getMenuItemV1?localeCode=mx", headers, body)
+        item = data.get("data", {}).get("catalogItem", {})
+        groups = item.get("itemCustomizationList", []) or item.get("customizationList", [])
+        result = {"customizationGroups": []}
+        labels = []
+        for group in groups:
+            options = group.get("options") or group.get("optionList") or []
+            if not options:
+                continue
+            first = options[0]
+            label = first.get("title") or first.get("name") or ""
+            if label:
+                labels.append(label)
+            result["customizationGroups"].append({
+                "customizationGroupId": group.get("id") or group.get("customizationGroupId", ""),
+                "selectedOptions": [{
+                    "optionId": first.get("id") or first.get("optionId", ""),
+                    "quantity": 1,
+                }],
+            })
+        return result, ", ".join(labels)
+    except Exception:
+        return {}, ""
+
+
+def _call_ubereats(url: str, headers: dict, body: dict) -> dict:
+    """
+    Llama a UberEats. Si hay un Worker configurado, lo usa como proxy
+    (evita el bloqueo de IPs de AWS). Si no, llama directo con curl_cffi.
+    """
+    if _WORKER_URL and _WORKER_SECRET:
+        resp = _requests.post(
+            _WORKER_URL,
+            json={"url": url, "method": "POST", "headers": headers, "body": body},
+            headers={"x-kupi-secret": _WORKER_SECRET},
+            timeout=20,
+        )
+        resp.raise_for_status()
+        return resp.json()
+    else:
+        # Desarrollo local: llamada directa con curl_cffi
+        resp = requests.post(url, json=body, headers=headers, impersonate="chrome120", timeout=20)
+        resp.raise_for_status()
+        return resp.json()
+
+
 class UberEatsConnector(BaseConnector):
 
     def fetch_menu(self, store_id: str, lat: float, lng: float) -> list[Product]:
@@ -60,20 +138,14 @@ class UberEatsConnector(BaseConnector):
         Llama a getStoreV1 y parsea el catálogo completo.
         Guarda section_uuid y subsection_uuid por producto (necesarios para cotizar).
         """
-        session = _build_session(lat, lng)
+        headers = _build_headers(lat, lng)
         body = {
             "storeUuid": store_id,
             "diningMode": "DELIVERY",
             "time": {"asap": True},
             "cbType": "EATER_ENDORSED",
         }
-        resp = session.post(
-            f"{_BASE_URL}/getStoreV1?localeCode=mx",
-            json=body,
-            impersonate="chrome120",
-        )
-        resp.raise_for_status()
-        data = resp.json()
+        data = _call_ubereats(f"{_BASE_URL}/getStoreV1?localeCode=mx", headers, body)
         if data.get("status") != "success":
             raise RuntimeError(f"getStoreV1 falló: {data.get('data', {}).get('errorMessage', 'unknown')}")
 
@@ -87,15 +159,13 @@ class UberEatsConnector(BaseConnector):
           2. getCheckoutPresentationV1 → desglose: producto + envío + cuota de servicio
         Reutiliza el getStoreV1 (ya llamado en fetch_menu) para obtener nombre y dirección.
         """
-        session = _build_session(lat, lng)
-
         # Obtener nombre y dirección de la tienda
         store_body = {"storeUuid": store_id, "diningMode": "DELIVERY", "time": {"asap": True}, "cbType": "EATER_ENDORSED"}
-        store_resp = session.post(f"{_BASE_URL}/getStoreV1?localeCode=mx", json=store_body, impersonate="chrome120")
-        store_resp.raise_for_status()
-        store_data = store_resp.json().get("data", {})
+        store_data = _call_ubereats(f"{_BASE_URL}/getStoreV1?localeCode=mx", _build_headers(lat, lng), store_body).get("data", {})
         store_name = store_data.get("title", "")
         store_address = store_data.get("location", {}).get("address", "")
+        is_open = store_data.get("isOpen", True) and store_data.get("isOrderable", True)
+        opens_at = store_data.get("closedMessage", "") if not is_open else ""
 
         # Construir el referer con el quickView del producto específico
         modctx = json.dumps({
@@ -115,8 +185,6 @@ class UberEatsConnector(BaseConnector):
             f"https://www.ubereats.com/mx/store/store/{store_id}"
             f"?diningMode=DELIVERY&mod=quickView&modctx={modctx_deep}"
         )
-        session.headers.update({"referer": referer})
-
         # Paso 1 - crear draft order
         create_body = {
             "isMulticart": True,
@@ -149,15 +217,17 @@ class UberEatsConnector(BaseConnector):
             "actionMeta": {"isQuickAdd": False, "numClicks": 1},
             "businessDetails": {},
         }
-        resp1 = session.post(
-            f"{_BASE_URL}/createDraftOrderV2?localeCode=mx",
-            json=create_body,
-            impersonate="chrome120",
-        )
-        resp1.raise_for_status()
-        data1 = resp1.json()
+        variant_label = ""
+        data1 = _call_ubereats(f"{_BASE_URL}/createDraftOrderV2?localeCode=mx", _build_headers(lat, lng, referer), create_body)
         if data1.get("status") != "success":
-            raise RuntimeError(f"createDraftOrderV2 falló: {data1}")
+            # Puede fallar por customizaciones obligatorias vacías — obtenerlas y reintentar
+            auto_custom, variant_label = _auto_customizations(store_id, product, lat, lng)
+            if auto_custom:
+                create_body["shoppingCartItems"][0]["customizations"] = auto_custom
+                create_body["shoppingCartItems"][0]["shoppingCartItemUuid"] = str(uuid_lib.uuid4())
+                data1 = _call_ubereats(f"{_BASE_URL}/createDraftOrderV2?localeCode=mx", _build_headers(lat, lng, referer), create_body)
+            if data1.get("status") != "success":
+                raise RuntimeError(f"createDraftOrderV2 falló: {data1}")
 
         draft_order_uuid = data1["data"]["draftOrder"]["uuid"]
 
@@ -182,18 +252,12 @@ class UberEatsConnector(BaseConnector):
                 "versionMetadata",
             ],
         }
-        resp2 = session.post(
-            f"{_BASE_URL}/getCheckoutPresentationV1?localeCode=mx",
-            json=checkout_body,
-            impersonate="chrome120",
-        )
-        resp2.raise_for_status()
-        data2 = resp2.json()
+        data2 = _call_ubereats(f"{_BASE_URL}/getCheckoutPresentationV1?localeCode=mx", _build_headers(lat, lng, referer), checkout_body)
         if data2.get("status") != "success":
             raise RuntimeError(f"getCheckoutPresentationV1 falló: {data2}")
 
         checkout_data = data2["data"]
-        return _parse_checkout(checkout_data, product, store_id, store_name, store_address, deep_link=deep_link_ue)
+        return _parse_checkout(checkout_data, product, store_id, store_name, store_address, deep_link=deep_link_ue, variant_label=variant_label, is_open=is_open, opens_at=opens_at)
 
 
 def _parse_menu(store_data: dict) -> list[Product]:
@@ -229,7 +293,7 @@ def _parse_money_text(text: str) -> float:
         return 0.0
 
 
-def _parse_checkout(checkout_data: dict, product: Product, store_id: str, store_name: str = "", store_address: str = "", deep_link: str = "") -> PriceQuote:
+def _parse_checkout(checkout_data: dict, product: Product, store_id: str, store_name: str = "", store_address: str = "", deep_link: str = "", variant_label: str = "", is_open: bool = True, opens_at: str = "") -> PriceQuote:
     payloads = checkout_data.get("checkoutPayloads", {})
     charges = payloads.get("fareBreakdown", {}).get("charges", [])
 
@@ -259,4 +323,7 @@ def _parse_checkout(checkout_data: dict, product: Product, store_id: str, store_
         deep_link=deep_link or f"https://www.ubereats.com/mx/store/store/{store_id}",
         store_name=store_name,
         store_address=store_address,
+        variant_label=variant_label,
+        is_open=is_open,
+        opens_at=opens_at,
     )

@@ -9,12 +9,21 @@ interface Props {
   fromPrice: number;
   platforms: number;
   imageUrl?: string;
+  isOpen?: boolean; // undefined = cargando (no bloquea), false = cerrado
 }
 
-export default function RestaurantCard({ id, name, cuisine, rating, fromPrice, platforms, imageUrl }: Props) {
-  return (
-    <Link href={`/compare/${id}`}>
-    <div className="kupi-card bg-[var(--surface)] border border-[var(--border)] rounded-2xl overflow-hidden cursor-pointer shadow-[0_1px_3px_rgba(31,35,35,0.05)]">
+export default function RestaurantCard({ id, name, cuisine, rating, fromPrice, platforms, imageUrl, isOpen }: Props) {
+  const closed = isOpen === false;
+  const loading = isOpen === undefined;
+
+  const cardBody = (
+    <div
+      className={`bg-[var(--surface)] border border-[var(--border)] rounded-2xl overflow-hidden shadow-[0_1px_3px_rgba(31,35,35,0.05)] transition-opacity duration-300 ${
+        closed   ? "opacity-50 cursor-default" :
+        loading  ? "opacity-70 cursor-default animate-pulse" :
+                   "kupi-card cursor-pointer"
+      }`}
+    >
       {/* Imagen */}
       <div className="h-36 bg-[var(--bg)] relative">
         {imageUrl ? (
@@ -22,6 +31,13 @@ export default function RestaurantCard({ id, name, cuisine, rating, fromPrice, p
         ) : (
           <div className="w-full h-full flex items-center justify-center text-[var(--text-muted)] text-xs">
             Sin imagen
+          </div>
+        )}
+        {closed && (
+          <div className="absolute inset-0 flex items-center justify-center bg-[rgba(31,35,35,0.45)]">
+            <span className="text-[13px] font-semibold text-white px-3 py-1 rounded-full bg-[rgba(31,35,35,0.7)]">
+              Cerrado
+            </span>
           </div>
         )}
       </div>
@@ -43,11 +59,18 @@ export default function RestaurantCard({ id, name, cuisine, rating, fromPrice, p
           </span>
         </div>
 
-        <p className="text-[15px] font-bold text-[var(--savings)]">
-          Desde ${fromPrice.toFixed(0)}
-        </p>
+        {closed ? (
+          <p className="text-[13px] text-[var(--text-muted)]">No disponible ahora</p>
+        ) : (
+          <p className="text-[15px] font-bold text-[var(--savings)]">
+            Desde ${fromPrice.toFixed(0)}
+          </p>
+        )}
       </div>
     </div>
-    </Link>
   );
+
+  if (closed || loading) return cardBody;
+
+  return <Link href={`/compare/${id}`}>{cardBody}</Link>;
 }

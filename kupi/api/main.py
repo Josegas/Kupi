@@ -17,7 +17,7 @@ app = FastAPI(title="Kupi API", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # ajustar al dominio real en producción
+    allow_origins=["*"],  # TODO: restringir al dominio del frontend una vez deployado
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
@@ -54,6 +54,9 @@ class QuoteResponse(BaseModel):
     deep_link: str
     store_name: str
     store_address: str
+    variant_label: str = ""
+    is_open: bool = True
+    opens_at: str = ""
 
 
 # --- Endpoints ---
@@ -127,6 +130,64 @@ def _match_products(rappi_products: list, ue_products: list) -> dict:
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/stores/status")
+def get_stores_status(
+    rappi_store_ids: str,
+    ue_store_ids: str = "",
+    lat: float = DEFAULT_LAT,
+    lng: float = DEFAULT_LNG,
+):
+    """
+    Verifica si cada restaurante está abierto en Rappi y/o UberEats.
+    Un restaurante se muestra como abierto si AL MENOS UNA plataforma lo tiene abierto.
+    rappi_store_ids y ue_store_ids: IDs separados por coma, en el mismo orden.
+    Retorna: { "<rappi_store_id>": { "is_open": bool } }
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    from kupi.connectors.ubereats.connector import _call_ubereats, _build_headers, _BASE_URL
+
+    rappi_ids = [sid.strip() for sid in rappi_store_ids.split(",") if sid.strip()]
+    ue_ids = [sid.strip() for sid in ue_store_ids.split(",") if sid.strip()]
+    # Emparejar rappi_id → ue_id por posición
+    ue_map = {rappi_ids[i]: ue_ids[i] for i in range(min(len(rappi_ids), len(ue_ids)))}
+
+    def check_rappi(store_id: str) -> bool:
+        try:
+            data = rappi._fetch_store(store_id, lat, lng)
+            status = data.get("status", "")
+            if status == "OUT_OF_COVERAGE":
+                return False  # no sabemos si está abierto, defer a UberEats
+            return status == "OPEN"
+        except Exception:
+            return False
+
+    def check_ue(ue_store_id: str) -> bool:
+        try:
+            headers = _build_headers(lat, lng)
+            body = {"storeUuid": ue_store_id, "diningMode": "DELIVERY", "time": {"asap": True}, "cbType": "EATER_ENDORSED"}
+            data = _call_ubereats(f"{_BASE_URL}/getStoreV1?localeCode=mx", headers, body).get("data", {})
+            # closedMessage vacío = abierto ahora; no vacío = cerrado ("Abre: 10:00 a.m.")
+            return not data.get("closedMessage", "")
+        except Exception:
+            return False
+
+    def check_one(rappi_id: str) -> tuple[str, bool]:
+        ue_id = ue_map.get(rappi_id)
+        rappi_open = check_rappi(rappi_id)
+        ue_open = check_ue(ue_id) if ue_id else False
+        # Abierto si cualquiera de las dos plataformas lo está
+        return rappi_id, rappi_open or ue_open
+
+    result: dict[str, dict] = {}
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures = {executor.submit(check_one, sid): sid for sid in rappi_ids}
+        for future in as_completed(futures):
+            store_id, is_open = future.result()
+            result[store_id] = {"is_open": is_open}
+
+    return result
 
 
 @app.get("/proxy/image")
@@ -236,7 +297,7 @@ def get_combined_menu(
         except Exception as e:
             errors.append(f"DiDi: {e}")
 
-    if not rappi_products or not ue_products:
+    if not rappi_products and not ue_products:
         raise HTTPException(status_code=502, detail={"errors": errors})
 
     result = _match_products(rappi_products, ue_products)

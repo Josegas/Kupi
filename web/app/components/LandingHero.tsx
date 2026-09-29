@@ -10,9 +10,9 @@ const LINE1 = ["El", "precio", "real,"];
 const LINE2 = ["antes", "de", "pedir."];
 
 const FLOAT_ROWS = [
-  "Rappi · $189 \u00a0·\u00a0 Uber Eats · $214 \u00a0·\u00a0 DiDi · $196",
-  "McDonald's · $142 \u00a0·\u00a0 $138 \u00a0·\u00a0 $151",
-  "Domino's · $229 \u00a0·\u00a0 $241 \u00a0·\u00a0 $235",
+  "Rappi · $189 \u00a0·\u00a0 Uber Eats · $214",
+  "McDonald's · $142 \u00a0·\u00a0 Uber Eats · $138",
+  "Domino's · $229 \u00a0·\u00a0 Uber Eats · $241",
 ];
 
 export default function LandingHero() {

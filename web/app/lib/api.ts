@@ -16,6 +16,9 @@ export interface QuoteResponse {
   deep_link: string;
   store_name: string;
   store_address: string;
+  variant_label: string;
+  is_open: boolean;
+  opens_at: string;
 }
 
 export interface CompareRequest {
@@ -64,6 +67,23 @@ function parseDetail(detail: unknown, status: number): string {
   }
   if (detail && typeof detail === "object") return JSON.stringify(detail);
   return `Error ${status}`;
+}
+
+export async function fetchStoresStatus(
+  rappiStoreIds: string[],
+  ueStoreIds: string[],
+  lat?: number,
+  lng?: number,
+): Promise<Record<string, { is_open: boolean }>> {
+  const params = new URLSearchParams({
+    rappi_store_ids: rappiStoreIds.join(","),
+    ue_store_ids: ueStoreIds.join(","),
+  });
+  if (lat !== undefined) params.set("lat", String(lat));
+  if (lng !== undefined) params.set("lng", String(lng));
+  const res = await fetch(`${API_URL}/stores/status?${params}`);
+  if (!res.ok) return {};
+  return res.json();
 }
 
 export async function fetchCombinedMenu(

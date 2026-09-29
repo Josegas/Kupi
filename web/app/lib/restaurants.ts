@@ -11,6 +11,9 @@ export interface RestaurantConfig {
   // DiDi Food: ID numérico de la sucursal en stores.json.
   // null = sucursal no disponible en DiDi o branch no confirmada.
   didi_store_id: string | null;
+  // false = restaurante cerrado permanentemente o suspendido; se oculta del listado.
+  // undefined/true = disponible normalmente.
+  available?: boolean;
 }
 
 export const RESTAURANTS: RestaurantConfig[] = [
@@ -97,6 +100,18 @@ export const RESTAURANTS: RestaurantConfig[] = [
     rappi_store_id: "1923235741",
     ubereats_store_id: "dd6ea249-d885-464f-a73d-8e67e62068c7",
     didi_store_id: "5764607693478953218", // McDonald's (Culiacán) — De Los Insurgentes / C.P. 80000 = centro, no Sendero
+  },
+  {
+    id: "sushi-city-culiacan",
+    name: "Sushi City",
+    cuisine: "Sushi",
+    rating: 4.7,
+    platforms: 2,
+    fromPrice: 89,
+    imageUrl: "https://images.rappi.com.mx/restaurants_background/phr-p1-mx-1930209629.png",
+    rappi_store_id: "1930209629",       // Sucursal Hidalgo
+    ubereats_store_id: "2ef66044-c618-440c-8775-4fb2f2bfd9fb", // Sucursal Tierra Blanca
+    didi_store_id: null,
   },
   {
     id: "taqueria-san-juan-culiacan",
