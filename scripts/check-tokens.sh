@@ -96,7 +96,9 @@ else:
         "accept": "application/json",
         "accept-language": "es-MX",
     }
-    body = {"lat": 24.80769, "lng": -107.39447, "store_type": "restaurant",
+    lat = float(env.get("DEFAULT_LAT", "24.7950"))
+    lng = float(env.get("DEFAULT_LNG", "-107.4310"))
+    body = {"lat": lat, "lng": lng, "store_type": "restaurant",
             "is_prime": False, "prime_config": {"unlimited_shipping": False}}
     try:
         t0 = time.time()

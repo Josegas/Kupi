@@ -2,6 +2,9 @@
 @import "tailwindcss";
 
 /* ── Paleta A: Día claro (default) ───────────────────────────── */
+/* Ocultar scrollbar manteniendo el scroll funcional */
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+
 :root {
   --bg: #F5F5F3;
   --surface: #FFFFFF;

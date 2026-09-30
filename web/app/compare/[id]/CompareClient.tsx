@@ -1,6 +1,7 @@
 "use client";
-import { useState, useEffect } from "react";
-import { ArrowLeft, ArrowRight, RefreshCw, MapPin, Search } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { useSearchParams } from "next/navigation";
+import { ArrowLeft, RefreshCw, MapPin, Search } from "lucide-react";
 import Link from "next/link";
 import PlatformCompareCard from "../../components/PlatformCompareCard";
 import CTAButton from "../../components/CTAButton";
@@ -8,6 +9,48 @@ import { compareProducts, fetchCombinedMenu, proxyImage, QuoteResponse, Combined
 import { RestaurantConfig } from "../../lib/restaurants";
 import { useLocation } from "../../lib/location";
 import { useLang } from "../../lib/i18n";
+import KupiLogo from "../../components/KupiLogo";
+
+const _COMPLEMENT_RE = new RegExp(
+  [
+    "\\b\\d+\\s*ml\\b",
+    "\\blat[a]?\\b",
+    "\\blitros?\\b",
+    "\\blts?\\b",
+    "\\b(coca.?cola|pepsi|sprite|fanta|sidral|mundet|fuze|7up|manzanita|mirinda|peñafiel|squirt|boing|fresca)\\b",
+    "\\b(refresco|limonada|jugo|bebida|changuirongo)\\b",
+    "^\\s*(salsa|aderezo|dip|crazy sauce)\\b",
+    "\\bdip\\b",                                     // dip en cualquier posición
+    "\\bsalsas?\\s*$",
+    "\\b(bbq|ranch|brava|cheesepe[ñn]o|mango.habanero)\\s*$",
+    "\\bshot\\b",
+    "\\b(kream|big kream)\\b",
+    "\\b(sundae|mcflurry|malteada|helado|pay de|dona|donut|cake pop)\\b",
+    "\\bbaitz\\b",
+    "\\badicionales?\\b",
+    "\\b(puré de papa|papas?\\s+(gajo|francesas?|a\\s+la\\s+francesa|fritas?|medianas?|grandes?|pequeñas?))\\b",
+    "\\b(ensalada de col|coleslaw)\\b",
+    "\\bsobre\\s+(huntrix|saja)\\b",
+    "\\bfrijol(es)?\\b",
+    "\\b(cheesy\\s*bread|papotas)\\b",
+    "\\b(crazy\\s*bread|canela\\s*stix)\\b",
+    "\\bté\\s+de\\s+la\\s+casa\\b",
+    "extra\\s*$",
+    "ingrediente\\s+extra",                          // "Ingrediente Extra para Rollo"
+    "\\btogarashi\\b",                               // condimento Sushi City
+    "\\bquepapas?\\b",                               // snack Pizza Hut
+    "\\b(agua ciel|agua purificada)\\b",
+    "^agua\\s",
+    "^tortilla[s]?\\s",                              // toda tortilla suelta
+    "^guacamole\\b",                                 // guacamole como dip
+    "^queso\\s*$",                                   // "Queso" solo = dip, no "Pizza de Queso"
+  ].join("|"),
+  "i"
+);
+
+function isComplement(name: string): boolean {
+  return _COMPLEMENT_RE.test(name.trim());
+}
 
 interface Props {
   restaurant: RestaurantConfig;
@@ -29,9 +72,15 @@ interface ListProduct {
 export default function CompareClient({ restaurant }: Props) {
   const { location } = useLocation();
   const { t } = useLang();
+  const searchParams = useSearchParams();
+  const preselectRappi = searchParams.get("r");
+  const preselectUE = searchParams.get("u");
+  const fromDeals = preselectRappi !== null || preselectUE !== null;
+  const autoSelectedRef = useRef(false);
 
   // — Paso 1: selección de producto —
-  const [step, setStep] = useState<Step>("selecting");
+  // Si vienen parámetros de preselección, saltar directo a comparación
+  const [step, setStep] = useState<Step>(fromDeals ? "comparing" : "selecting");
   const [allProducts, setAllProducts] = useState<ListProduct[]>([]);
   const [loadingMenu, setLoadingMenu] = useState(true);
   const [menuError, setMenuError] = useState<string | null>(null);
@@ -41,7 +90,7 @@ export default function CompareClient({ restaurant }: Props) {
 
   // — Paso 2: comparación de precios —
   const [quotes, setQuotes] = useState<QuoteResponse[]>([]);
-  const [loadingQuotes, setLoadingQuotes] = useState(false);
+  const [loadingQuotes, setLoadingQuotes] = useState(fromDeals);
   const [quotesError, setQuotesError] = useState<string | null>(null);
   const [selectedQuote, setSelectedQuote] = useState<QuoteResponse | null>(null);
 
@@ -60,7 +109,12 @@ export default function CompareClient({ restaurant }: Props) {
           ...data.only_rappi.map((p) => ({ ...p, exclusivePlatform: "rappi" as const })),
           ...data.only_ubereats.map((p) => ({ ...p, exclusivePlatform: "ubereats" as const })),
         ];
-        const merged = [...matched, ...exclusive].sort((a, b) => a.price - b.price);
+        const merged = [...matched, ...exclusive].sort((a, b) => {
+          const aComp = isComplement(a.name);
+          const bComp = isComplement(b.name);
+          if (aComp !== bComp) return aComp ? 1 : -1;
+          return a.price - b.price;
+        });
         setAllProducts(merged);
       })
       .catch((e) => setMenuError(e.message))
@@ -69,6 +123,7 @@ export default function CompareClient({ restaurant }: Props) {
 
   useEffect(() => {
     loadMenu();
+    autoSelectedRef.current = false;
   }, [restaurant, location]);
 
   const handleSelectProduct = (product: ListProduct) => {
@@ -94,6 +149,23 @@ export default function CompareClient({ restaurant }: Props) {
       .finally(() => setLoadingQuotes(false));
   };
 
+  // Auto-seleccionar producto si viene de /deals con ?r=...&u=...
+  useEffect(() => {
+    if (!preselectRappi && !preselectUE) return;
+    if (loadingMenu || autoSelectedRef.current) return;
+    if (allProducts.length === 0) return;
+
+    const match = allProducts.find(
+      (p) =>
+        (preselectRappi && p.rappi_product_id === preselectRappi) ||
+        (preselectUE && p.ubereats_product_id === preselectUE),
+    );
+    if (match) {
+      autoSelectedRef.current = true;
+      handleSelectProduct(match);
+    }
+  }, [allProducts, loadingMenu]);
+
   const filteredProducts = allProducts.filter((p) => {
     const matchesSearch = p.name.toLowerCase().includes(search.toLowerCase());
     const matchesPlatform =
@@ -110,28 +182,45 @@ export default function CompareClient({ restaurant }: Props) {
   const Header = (
     <div className="bg-[var(--surface)] border-b border-[var(--border)] sticky top-0 z-10">
       <div className="max-w-6xl mx-auto px-12 h-16 flex items-center gap-4">
+        {/* Flecha atrás */}
         {step === "comparing" ? (
-          <button
-            onClick={() => setStep("selecting")}
-            className="kupi-link text-[var(--text-secondary)] transition-colors"
-          >
-            <ArrowLeft size={20} />
-          </button>
+          fromDeals ? (
+            <Link href="/deals" className="kupi-link text-[var(--text-secondary)] transition-colors shrink-0">
+              <ArrowLeft size={20} />
+            </Link>
+          ) : (
+            <button
+              onClick={() => setStep("selecting")}
+              className="kupi-link text-[var(--text-secondary)] transition-colors shrink-0"
+            >
+              <ArrowLeft size={20} />
+            </button>
+          )
         ) : (
-          <Link href="/buscar" className="kupi-link text-[var(--text-secondary)] transition-colors">
+          <Link href="/buscar" className="kupi-link text-[var(--text-secondary)] transition-colors shrink-0">
             <ArrowLeft size={20} />
           </Link>
         )}
-        <div>
+
+        {/* Logo — link a inicio */}
+        <Link href="/buscar" className="shrink-0">
+          <KupiLogo size={110} imageSrc="/Kupilogo6.png" />
+        </Link>
+
+        {/* Separador */}
+        <div className="w-px h-6 bg-[var(--border)] shrink-0" />
+
+        {/* Restaurante */}
+        <div className="min-w-0">
           <span
-            className="text-[17px] font-semibold text-[var(--text-primary)]"
+            className="text-[16px] font-semibold text-[var(--text-primary)] truncate block"
             style={{ fontFamily: "var(--font-display)" }}
           >
             {restaurant.name}
           </span>
           <p className="text-[12px] text-[var(--text-muted)] flex items-center gap-1 mt-0.5">
-            <MapPin size={11} className="text-[var(--brand)]" />
-            {location.label}
+            <MapPin size={11} className="text-[var(--brand)] shrink-0" />
+            <span className="truncate">{location.label}</span>
           </p>
         </div>
       </div>
@@ -143,7 +232,7 @@ export default function CompareClient({ restaurant }: Props) {
     return (
       <div className="min-h-screen bg-[var(--bg)]">
         {Header}
-        <div className="compare-step max-w-2xl mx-auto px-6 py-8">
+        <div className="compare-step max-w-5xl mx-auto px-6 py-8">
 
           <h2
             className="text-[18px] font-semibold text-[var(--text-primary)] mb-1"
@@ -196,11 +285,11 @@ export default function CompareClient({ restaurant }: Props) {
 
           {/* Loading */}
           {loadingMenu && (
-            <div className="flex flex-col gap-3">
-              {[0, 1, 2, 3, 4].map((i) => (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+              {Array.from({ length: 8 }).map((_, i) => (
                 <div
                   key={i}
-                  className="h-16 rounded-xl bg-[var(--surface)] border border-[var(--border)] animate-pulse"
+                  className="rounded-xl bg-[var(--surface)] border border-[var(--border)] animate-pulse aspect-[3/4]"
                 />
               ))}
             </div>
@@ -219,52 +308,61 @@ export default function CompareClient({ restaurant }: Props) {
             </div>
           )}
 
-          {/* Lista de productos */}
+          {/* Grid de productos */}
           {!loadingMenu && !menuError && (
-            <div className="flex flex-col gap-2">
+            <>
               {filteredProducts.length === 0 && (
                 <p className="text-[14px] text-[var(--text-muted)] text-center py-8">
                   {search ? t.compare.noSearchResults : t.compare.noProducts}
                 </p>
               )}
-              {filteredProducts.map((p, i) => {
-                const PLATFORM_COLORS: Record<string, string> = { rappi: "#FF441F", ubereats: "#06C167" };
-                const PLATFORM_LABELS: Record<string, string> = { rappi: "Rappi", ubereats: "Uber Eats" };
-                return (
-                  <button
-                    key={p.rappi_product_id ?? p.ubereats_product_id}
-                    onClick={() => handleSelectProduct(p)}
-                    className={`kupi-card w-full text-left bg-[var(--surface)] border border-[var(--border)] rounded-xl p-3 flex items-center gap-3 transition-colors hover:border-[var(--brand)]${!search ? " stagger-product" : ""}`}
-                    style={!search ? { animationDelay: `${Math.min(i * 38, 220)}ms` } : undefined}
-                  >
-                    <div className="w-14 h-14 rounded-lg bg-[var(--bg)] shrink-0 overflow-hidden">
-                      {p.image_url ? (
-                        <img src={proxyImage(p.image_url)} alt={p.name} className="w-full h-full object-cover" />
-                      ) : (
-                        <div className="w-full h-full" />
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[14px] font-semibold text-[var(--text-primary)] leading-tight truncate">{p.name}</p>
-                      {p.exclusivePlatform ? (
-                        <span
-                          className="inline-block text-[10px] font-bold px-2 py-0.5 rounded-full mt-1"
-                          style={{ background: PLATFORM_COLORS[p.exclusivePlatform] + "22", color: PLATFORM_COLORS[p.exclusivePlatform] }}
-                        >
-                          Solo en {PLATFORM_LABELS[p.exclusivePlatform]}
-                        </span>
-                      ) : p.description ? (
-                        <p className="text-[12px] text-[var(--text-muted)] leading-snug mt-0.5 line-clamp-1">{p.description}</p>
-                      ) : null}
-                    </div>
-                    <div className="flex items-center gap-3 shrink-0">
-                      <span className="text-[14px] font-bold text-[var(--savings)]">${p.price.toFixed(0)}</span>
-                      <ArrowRight size={15} className="text-[var(--text-muted)]" />
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                {filteredProducts.map((p, i) => {
+                  const PLATFORM_COLORS: Record<string, string> = { rappi: "#FF441F", ubereats: "#06C167" };
+                  const PLATFORM_LABELS: Record<string, string> = { rappi: "Rappi", ubereats: "Uber Eats" };
+                  return (
+                    <button
+                      key={p.rappi_product_id ?? p.ubereats_product_id}
+                      onClick={() => handleSelectProduct(p)}
+                      className={`kupi-card text-left bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden hover:border-[var(--brand)]${!search ? " stagger-product" : ""}`}
+                      style={!search ? { animationDelay: `${Math.min(i * 30, 300)}ms` } : undefined}
+                    >
+                      {/* Imagen */}
+                      <div className="w-full aspect-square bg-[var(--bg)] overflow-hidden">
+                        {p.image_url ? (
+                          <img
+                            src={proxyImage(p.image_url)}
+                            alt={p.name}
+                            loading="lazy"
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                              const img = e.target as HTMLImageElement;
+                              if (img.src !== p.image_url) img.src = p.image_url;
+                              else img.style.display = "none";
+                            }}
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-[var(--text-muted)] text-xs">Sin imagen</div>
+                        )}
+                      </div>
+                      {/* Info */}
+                      <div className="p-3">
+                        <p className="text-[13px] font-semibold text-[var(--text-primary)] leading-tight line-clamp-2 mb-1">{p.name}</p>
+                        {p.exclusivePlatform && (
+                          <span
+                            className="inline-block text-[10px] font-bold px-1.5 py-0.5 rounded-full mb-1"
+                            style={{ background: PLATFORM_COLORS[p.exclusivePlatform] + "22", color: PLATFORM_COLORS[p.exclusivePlatform] }}
+                          >
+                            Solo {PLATFORM_LABELS[p.exclusivePlatform]}
+                          </span>
+                        )}
+                        <p className="text-[14px] font-bold text-[var(--savings)]">${p.price.toFixed(0)}</p>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </>
           )}
         </div>
       </div>
@@ -288,6 +386,14 @@ export default function CompareClient({ restaurant }: Props) {
                     src={proxyImage(selectedProduct.image_url)}
                     alt={selectedProduct.name}
                     className="w-full h-full object-cover"
+                    onError={(e) => {
+                      const img = e.target as HTMLImageElement;
+                      if (img.src !== selectedProduct.image_url) {
+                        img.src = selectedProduct.image_url;
+                      } else {
+                        img.style.display = "none";
+                      }
+                    }}
                   />
                 ) : restaurant.imageUrl ? (
                   <img

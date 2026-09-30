@@ -69,6 +69,43 @@ function parseDetail(detail: unknown, status: number): string {
   return `Error ${status}`;
 }
 
+export interface FeaturedProduct {
+  name: string;
+  price: number;
+  image_url: string;
+  restaurant_id: string;
+  restaurant_name: string;
+  category: string;
+  rappi_product_id: string;
+  ubereats_product_id: string;
+}
+
+export interface DealProduct {
+  name: string;
+  price: number;          // precio del producto (catálogo)
+  total: number;          // total real verificado (producto + envío + cuota)
+  best_platform: string;  // plataforma más barata
+  image_url: string;
+  restaurant_id: string;
+  restaurant_name: string;
+  category: string;
+  rappi_product_id: string;
+  ubereats_product_id: string;
+  quotes: Array<{ platform: string; total: number; delivery_fee: number | null }>;
+}
+
+export async function fetchFeaturedProducts(maxPrice = 100): Promise<FeaturedProduct[]> {
+  const res = await fetch(`${API_URL}/products/featured?max_price=${maxPrice}`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function fetchDeals(category: string, maxPrice = 100): Promise<DealProduct[]> {
+  const res = await fetch(`${API_URL}/products/deals?category=${encodeURIComponent(category)}&max_price=${maxPrice}`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
 export async function fetchStoresStatus(
   rappiStoreIds: string[],
   ueStoreIds: string[],

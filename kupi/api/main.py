@@ -1,4 +1,5 @@
 import difflib
+import time as _time
 import unicodedata
 
 import requests as _requests
@@ -188,6 +189,233 @@ def get_stores_status(
             result[store_id] = {"is_open": is_open}
 
     return result
+
+
+import re as _re
+
+# Palabras/patrones que indican que un producto NO es un alimento que llena
+_NON_FOOD_RE = _re.compile(
+    r"\b\d+\s*ml\b"                                          # volumen: 600 ml, 237ml…
+    r"|\blat[a]?\b"                                          # lata, latas
+    r"|\blitros?\b|\blts?\b"                                 # litro/litros, lts
+    r"|\b(coca.?cola|pepsi|sprite|fanta|sidral|mundet|fuze|7up|manzanita|mirinda|peñafiel|squirt|boing|fresca)\b"
+    r"|\b(refresco|limonada|jugo|bebida|changuirongo)\b"     # bebidas
+    r"|^\s*(salsa|aderezo|dip|crazy sauce)\b"                # salsas/aderezos al inicio
+    r"|\bdip\b"                                             # dip en cualquier posición
+    r"|\bsalsas?\s*$"                                        # "2 Salsas"
+    r"|\b(bbq|ranch|brava|cheesepe[ñn]o|mango.habanero)\s*$"  # nombres de salsas solos
+    r"|\bshot\b"                                             # salsas en formato shot (KFC)
+    r"|\b(kream|big kream)\b"                                # bebidas KFC
+    r"|\b(sundae|mcflurry|malteada|helado|pay de|dona|donut|cake pop)\b"  # postres
+    r"|\bbaitz\b"                                            # Domino's dessert bites
+    r"|\badicionales?\b"                                     # "2 Adicionales"
+    r"|\b(puré de papa|papas?\s+(gajo|francesas?|a\s+la\s+francesa|fritas?|medianas?|grandes?|pequeñas?))\b"
+    r"|\b(ensalada de col|coleslaw)\b"
+    r"|\bsobre\s+(huntrix|saja)\b"                           # sobres de salsa McDonald's
+    r"|\bfrijol(es)?\b"                                      # frijoles como guarnición
+    r"|\b(cheesy\s*bread|papotas)\b"                         # Domino's sides
+    r"|\b(crazy\s*bread|canela\s*stix)\b"                    # Little Caesars sides
+    r"|\bté\s+de\s+la\s+casa\b"                             # té como bebida
+    r"|extra\s*$"
+    r"|ingrediente\s+extra"                                  # "Ingrediente Extra para Rollo"
+    r"|\btogarashi\b"                                        # condimento Sushi City
+    r"|\bquepapas?\b"                                        # snack Pizza Hut                                            # "Soya Extra", "Sriracha Extra"
+    r"|\b(agua ciel|agua purificada)\b"
+    r"|^agua\s"
+    r"|^tortilla[s]?\s"                              # toda tortilla suelta
+    r"|^guacamole\b"                                 # guacamole como dip
+    r"|^queso\s*$",                                  # "Queso" solo = dip
+    _re.IGNORECASE,
+)
+
+
+def _is_non_food(name: str) -> bool:
+    return bool(_NON_FOOD_RE.search(name.strip()))
+
+
+_FEATURED_RESTAURANTS = [
+    {"restaurant_id": "little-caesars-culiacan",    "rappi_store_id": "1923772704",  "ubereats_store_id": "793b1eae-e077-44d0-8744-cf23f54fec50", "cuisine": "Pizza",         "restaurant_name": "Little Caesars"},
+    {"restaurant_id": "pizza-hut-culiacan",          "rappi_store_id": "1923220069",  "ubereats_store_id": "e53caf1b-90b4-4c47-a0e0-6b8f63f65337", "cuisine": "Pizza",         "restaurant_name": "Pizza Hut"},
+    {"restaurant_id": "pizzeta-culiacan",            "rappi_store_id": "1923214369",  "ubereats_store_id": "800cdf3a-43c7-4bec-936e-a11d978b2143", "cuisine": "Pizza",         "restaurant_name": "Pizzeta"},
+    {"restaurant_id": "dominos-culiacan",            "rappi_store_id": "1930069672",  "ubereats_store_id": "cdc441e1-fca8-563c-bea6-d76717f401f9", "cuisine": "Pizza",         "restaurant_name": "Domino's Pizza"},
+    {"restaurant_id": "kfc-culiacan",                "rappi_store_id": "1923218753",  "ubereats_store_id": "ff1cda7d-6ac6-4b0f-a276-ff8e49fd63df", "cuisine": "Pollo",         "restaurant_name": "KFC"},
+    {"restaurant_id": "starbucks-culiacan",          "rappi_store_id": "1923761853",  "ubereats_store_id": "fa88c37a-8e40-43fc-a5c1-a1b288090fc1", "cuisine": "Café",          "restaurant_name": "Starbucks"},
+    {"restaurant_id": "mcdonalds-culiacan",          "rappi_store_id": "1923235741",  "ubereats_store_id": "dd6ea249-d885-464f-a73d-8e67e62068c7", "cuisine": "Hamburguesas",  "restaurant_name": "McDonald's"},
+    {"restaurant_id": "sushi-city-culiacan",         "rappi_store_id": "1930209629",  "ubereats_store_id": "2ef66044-c618-440c-8775-4fb2f2bfd9fb", "cuisine": "Sushi",         "restaurant_name": "Sushi City"},
+    {"restaurant_id": "taqueria-san-juan-culiacan",  "rappi_store_id": "1923229914",  "ubereats_store_id": "1916b3b2-36c3-4a79-bdf6-7e2f97e6ded6", "cuisine": "Tacos",         "restaurant_name": "Taquería San Juan"},
+]
+
+_featured_cache: dict = {"ts": 0.0, "data": []}
+_FEATURED_CACHE_TTL = 300  # 5 minutos
+
+
+@app.get("/products/featured")
+def get_featured_products(
+    max_price: float = 100.0,
+    lat: float = DEFAULT_LAT,
+    lng: float = DEFAULT_LNG,
+):
+    """
+    Productos bajo cierto precio, verificados en Rappi y Uber Eats.
+    Corre en paralelo y cachea el resultado 5 minutos.
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    global _featured_cache
+    now = _time.time()
+    if now - _featured_cache["ts"] < _FEATURED_CACHE_TTL:
+        return [p for p in _featured_cache["data"] if p["price"] <= max_price]
+
+    def fetch_one(r: dict) -> list[dict]:
+        try:
+            rappi_products = rappi.fetch_menu(r["rappi_store_id"], lat, lng)
+        except Exception:
+            rappi_products = []
+        try:
+            ue_products = ubereats.fetch_menu(r["ubereats_store_id"], lat, lng)
+        except Exception:
+            ue_products = []
+
+        matched = _match_products(rappi_products, ue_products)
+        results = []
+        for p in matched["matched"]:
+            # Filtrar extras, bebidas, salsas y postres
+            if p["price"] < 45:
+                continue
+            if not p.get("image_url"):
+                continue
+            if _is_non_food(p["name"]):
+                continue
+            results.append({
+                "name": p["name"],
+                "price": p["price"],
+                "image_url": p.get("image_url", ""),
+                "restaurant_id": r["restaurant_id"],
+                "restaurant_name": r["restaurant_name"],
+                "category": r["cuisine"],
+                "rappi_product_id": p.get("rappi_product_id", ""),
+                "ubereats_product_id": p.get("ubereats_product_id", ""),
+            })
+        return results
+
+    all_products: list[dict] = []
+    with ThreadPoolExecutor(max_workers=9) as executor:
+        futures = [executor.submit(fetch_one, r) for r in _FEATURED_RESTAURANTS]
+        for future in as_completed(futures):
+            all_products.extend(future.result())
+
+    all_products.sort(key=lambda x: x["price"])
+    _featured_cache = {"ts": now, "data": all_products}
+    return [p for p in all_products if p["price"] <= max_price]
+
+
+_deals_cache: dict = {}  # { "pizza_100": {"ts": float, "data": list} }
+
+
+@app.get("/products/deals")
+def get_deals(
+    category: str,
+    max_price: float = 100.0,
+    lat: float = DEFAULT_LAT,
+    lng: float = DEFAULT_LNG,
+):
+    """
+    Productos bajo el precio TOTAL real (producto + envío + cuota de servicio)
+    verificado en Rappi y Uber Eats con checkout completo.
+    Requiere categoría. Cache 5 min por categoría.
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    cache_key = f"{category.lower()}_{int(max_price)}"
+    now = _time.time()
+    if cache_key in _deals_cache and now - _deals_cache[cache_key]["ts"] < _FEATURED_CACHE_TTL:
+        return _deals_cache[cache_key]["data"]
+
+    restaurants = [r for r in _FEATURED_RESTAURANTS if r["cuisine"].lower() == category.lower()]
+    if not restaurants:
+        return []
+
+    # Paso 1: obtener menús en paralelo, conservando los objetos Product originales
+    def fetch_menus(r: dict):
+        try:
+            rappi_prods = rappi.fetch_menu(r["rappi_store_id"], lat, lng)
+        except Exception:
+            rappi_prods = []
+        try:
+            ue_prods = ubereats.fetch_menu(r["ubereats_store_id"], lat, lng)
+        except Exception:
+            ue_prods = []
+        rappi_map = {p.product_id: p for p in rappi_prods}
+        ue_map = {p.product_id: p for p in ue_prods}
+        matched = _match_products(rappi_prods, ue_prods)
+        return r, rappi_map, ue_map, matched
+
+    restaurant_data = []
+    with ThreadPoolExecutor(max_workers=len(restaurants)) as ex:
+        for result in as_completed([ex.submit(fetch_menus, r) for r in restaurants]):
+            restaurant_data.append(result.result())
+
+    # Paso 2: armar candidatos (filtro básico antes del checkout costoso)
+    candidates = []
+    for r, rappi_map, ue_map, matched in restaurant_data:
+        for p in matched["matched"]:
+            if p["price"] < 45 or p["price"] > max_price or not p.get("image_url"):
+                continue
+            if _is_non_food(p["name"]):
+                continue
+            rp = rappi_map.get(p.get("rappi_product_id", ""))
+            up = ue_map.get(p.get("ubereats_product_id", ""))
+            if not rp and not up:
+                continue
+            candidates.append((r, rp, up, p))
+
+    # Paso 3: checkout completo en paralelo (limitado para no saturar UberEats)
+    def full_compare(r, rp, up, p_info):
+        quotes = []
+        try:
+            if rp:
+                quotes.append(rappi.fetch_price(r["rappi_store_id"], rp, lat, lng))
+        except Exception:
+            pass
+        try:
+            if up:
+                quotes.append(ubereats.fetch_price(r["ubereats_store_id"], up, lat, lng))
+        except Exception:
+            pass
+        if not quotes:
+            return None
+        min_total = min(q.total for q in quotes)
+        if min_total > max_price:
+            return None
+        best = min(quotes, key=lambda q: q.total)
+        return {
+            "name": p_info["name"],
+            "price": p_info["price"],
+            "total": round(min_total, 2),
+            "best_platform": best.platform,
+            "image_url": p_info.get("image_url", ""),
+            "restaurant_id": r["restaurant_id"],
+            "restaurant_name": r["restaurant_name"],
+            "category": r["cuisine"],
+            "rappi_product_id": p_info.get("rappi_product_id", ""),
+            "ubereats_product_id": p_info.get("ubereats_product_id", ""),
+            "quotes": [
+                {"platform": q.platform, "total": round(q.total, 2), "delivery_fee": q.delivery_fee}
+                for q in quotes
+            ],
+        }
+
+    results = []
+    with ThreadPoolExecutor(max_workers=6) as ex:
+        futures = [ex.submit(full_compare, r, rp, up, p) for r, rp, up, p in candidates]
+        for f in as_completed(futures):
+            r = f.result()
+            if r:
+                results.append(r)
+
+    results.sort(key=lambda x: x["total"])
+    _deals_cache[cache_key] = {"ts": now, "data": results}
+    return results
 
 
 @app.get("/proxy/image")
@@ -382,3 +610,33 @@ def compare(req: CompareRequest):
     # Ordenar por total; DiDi va al final si su total es parcial (sin envío)
     quotes.sort(key=lambda q: q.total)
     return [QuoteResponse(**q.__dict__) for q in quotes]
+
+
+@app.get("/coupons")
+def get_coupons_endpoint(restaurant_id: str | None = None):
+    """
+    Devuelve cupones activos desde Supabase.
+    Opcionalmente filtra por restaurant_id.
+    """
+    try:
+        from kupi.catalog.coupons import get_coupons
+        return get_coupons(restaurant_id)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@app.post("/coupons/refresh")
+def refresh_coupons_endpoint(
+    lat: float = DEFAULT_LAT,
+    lng: float = DEFAULT_LNG,
+):
+    """
+    Escanea Rappi y UberEats en tiempo real y actualiza la tabla de cupones en Supabase.
+    Operación costosa (~10-30s) - llamar solo desde un job periódico o manualmente.
+    """
+    try:
+        from kupi.catalog.coupons import refresh_coupons
+        count = refresh_coupons(lat, lng)
+        return {"saved": count}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
