@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { RESTAURANTS } from "../../lib/restaurants";
 import CompareClient from "./CompareClient";
 
@@ -15,5 +16,9 @@ export default async function ComparePage({ params }: { params: Promise<{ id: st
       </div>
     );
   }
-  return <CompareClient restaurant={restaurant} />;
+  return (
+    <Suspense fallback={<div className="min-h-screen" />}>
+      <CompareClient restaurant={restaurant} />
+    </Suspense>
+  );
 }

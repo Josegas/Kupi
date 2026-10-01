@@ -180,6 +180,8 @@ selected = {
     "UBEREATS_COOKIE_PARAM_NAME": "split",
     "UBEREATS_WORKER_URL": env_vars.get("UBEREATS_WORKER_URL", ""),
     "UBEREATS_WORKER_SECRET": env_vars.get("UBEREATS_WORKER_SECRET", ""),
+    "SUPABASE_URL": env_vars.get("SUPABASE_URL", ""),
+    "SUPABASE_SECRET_KEY": env_vars.get("SUPABASE_SECRET_KEY", ""),
 }
 
 total = sum(len(k) + len(v) for k, v in selected.items())

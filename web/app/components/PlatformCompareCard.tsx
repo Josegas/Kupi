@@ -147,14 +147,6 @@ export default function PlatformCompareCard({
         </div>
       </div>
 
-      {approximate && (
-        <p className="text-[11px] text-[var(--text-muted)] leading-snug -mt-1">
-          {t.compare.approximate}{" "}
-          <span className="font-medium text-[var(--text-secondary)]">
-            {t.compare.approximateBold}
-          </span>
-        </p>
-      )}
 
       {platform === "didi" && (
         <p className="text-[11px] text-[var(--text-muted)] leading-snug -mt-1">

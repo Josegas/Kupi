@@ -6,8 +6,6 @@ import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useLang } from "../lib/i18n";
 
-const LINE1 = ["El", "precio", "real,"];
-const LINE2 = ["antes", "de", "pedir."];
 
 const FLOAT_ROWS = [
   "Rappi · $189 \u00a0·\u00a0 Uber Eats · $214",
@@ -86,13 +84,13 @@ export default function LandingHero() {
             perspective: "900px",
           }}
         >
-          {LINE1.map((word, i) => (
+          {t.landing.headline[0].map((word, i) => (
             <span key={i} className="lh-word inline-block" style={{ color: "#F5F1EC" }}>
               {word}&nbsp;
             </span>
           ))}
           <br />
-          {LINE2.map((word, i) => (
+          {t.landing.headline[1].map((word, i) => (
             <span key={i} className="lh-word inline-block" style={{ color: "rgba(245,241,236,0.22)" }}>
               {word}&nbsp;
             </span>

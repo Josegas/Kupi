@@ -7,6 +7,7 @@ export const T = {
   es: {
     landing: {
       eyebrow: "Metabuscador de precios · México",
+      headline: [["El", "precio", "real,"], ["antes", "de", "pedir."]],
       body: "Compara el costo final con envío en Rappi y Uber Eats. Sin abrir dos apps.",
       enter: "Entrar",
       marquee: ["Rappi", "Uber Eats", "¿Cuál es más barato?", "Rappi", "Uber Eats", "Tú decides"],
@@ -63,6 +64,7 @@ export const T = {
   en: {
     landing: {
       eyebrow: "Food price comparison · Mexico",
+      headline: [["The", "real", "price,"], ["before", "you", "order."]],
       body: "Compare the final cost with delivery on Rappi and Uber Eats. Without opening two apps.",
       enter: "Enter",
       marquee: ["Rappi", "Uber Eats", "Which is cheaper?", "Rappi", "Uber Eats", "You decide"],
