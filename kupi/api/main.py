@@ -1,14 +1,17 @@
 import difflib
+import os
 import re as _re
 import threading
 import time as _time
 import unicodedata
+from urllib.parse import urlparse
 
 import requests as _requests
-from fastapi import FastAPI, HTTPException, Query
+from cachetools import TTLCache
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from kupi.core.config import DEFAULT_LAT, DEFAULT_LNG
 from kupi.core.models import PriceQuote
@@ -16,12 +19,23 @@ from kupi.connectors.rappi.connector import RappiConnector, search_stores as rap
 from kupi.connectors.ubereats.connector import UberEatsConnector
 from kupi.connectors.didi.connector import DidiConnector
 
+from kupi.api.favorites import router as favorites_router
+from kupi.api.alerts import router as alerts_router
+
 app = FastAPI(title="Kupi API", version="0.1.0")
+
+app.include_router(favorites_router, prefix="/favorites", tags=["favorites"])
+app.include_router(alerts_router, prefix="/alerts", tags=["alerts"])
+
+# CORS: solo origenes permitidos (variable de entorno o localhost en desarrollo)
+_ALLOWED_ORIGINS = os.environ.get(
+    "CORS_ORIGINS", "http://localhost:3000"
+).split(",")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # TODO: restringir al dominio del frontend una vez deployado
-    allow_methods=["GET", "POST"],
+    allow_origins=_ALLOWED_ORIGINS,
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -29,13 +43,44 @@ rappi = RappiConnector()
 ubereats = UberEatsConnector()
 didi = DidiConnector()
 
-# --- Caché de status (abierto/cerrado) por store_id, TTL 10 min ---
-_status_cache: dict[str, dict] = {}  # { store_id: {"is_open": bool, "ts": float} }
-_STATUS_CACHE_TTL = 600  # 10 minutos
+# ══════════════════════════════════════════════════════════════════════
+# Capa 1: Cache de resultados — misma búsqueda = 0 requests externos
+# ══════════════════════════════════════════════════════════════════════
+_search_cache = TTLCache(maxsize=2048, ttl=120)      # búsquedas, 2 min
+_status_cache = TTLCache(maxsize=4096, ttl=600)       # status abierto/cerrado, 10 min
+_popular_cache_store = TTLCache(maxsize=1, ttl=300)   # populares, 5 min
+_featured_cache_store = TTLCache(maxsize=4, ttl=300)  # featured/deals, 5 min
+_cache_lock = threading.Lock()
 
-# --- Caché de restaurantes populares, TTL 5 min ---
-_popular_cache: dict = {"ts": 0.0, "data": []}
-_POPULAR_CACHE_TTL = 300  # 5 minutos
+# ══════════════════════════════════════════════════════════════════════
+# Capa 2: Request coalescing — N usuarios buscando lo mismo = 1 request
+# ══════════════════════════════════════════════════════════════════════
+_inflight: dict[str, threading.Event] = {}
+_inflight_results: dict[str, list] = {}
+_inflight_lock = threading.Lock()
+
+# ══════════════════════════════════════════════════════════════════════
+# Capa 3: Rate limit por IP — máximo 30 búsquedas/min por usuario
+# ══════════════════════════════════════════════════════════════════════
+_rate_limiter = TTLCache(maxsize=8192, ttl=60)  # ventana de 60s
+_rl_lock = threading.Lock()
+_SEARCH_RATE_LIMIT = 30  # búsquedas por IP por minuto
+_GENERAL_RATE_LIMIT = 60  # requests generales por IP por minuto
+
+
+def _check_rate_limit(ip: str, limit: int = _SEARCH_RATE_LIMIT, prefix: str = "search") -> None:
+    key = f"{prefix}:{ip}"
+    with _rl_lock:
+        count = _rate_limiter.get(key, 0)
+        if count >= limit:
+            raise HTTPException(status_code=429, detail="Demasiadas solicitudes. Intenta en un momento.")
+        _rate_limiter[key] = count + 1
+
+
+def _normalize_search_key(q: str, lat: float, lng: float) -> str:
+    """Genera una clave de cache normalizada para la búsqueda."""
+    # Redondear coords a 3 decimales (~110m) para agrupar ubicaciones cercanas
+    return f"{q.strip().lower()}|{lat:.3f}|{lng:.3f}"
 
 # Blacklist: tiendas/farmacias/supermercados que no son restaurantes
 _STORE_BLACKLIST = _re.compile(
@@ -140,10 +185,12 @@ def _match_products(rappi_products: list, ue_products: list) -> dict:
                 "image_url": p.image_url or "", "ubereats_product_id": p.product_id, "platform": "ubereats"
             })
 
+    # Priorizar productos con imagen (primero), luego por precio
+    _sort_key = lambda x: (0 if x.get("image_url") else 1, x["price"])
     return {
-        "matched": sorted(matched, key=lambda x: x["price"]),
-        "only_rappi": sorted(only_rappi, key=lambda x: x["price"]),
-        "only_ubereats": sorted(only_ubereats, key=lambda x: x["price"]),
+        "matched": sorted(matched, key=_sort_key),
+        "only_rappi": sorted(only_rappi, key=_sort_key),
+        "only_ubereats": sorted(only_ubereats, key=_sort_key),
     }
 
 
@@ -172,17 +219,17 @@ def get_stores_status(
     ue_ids = [sid.strip() for sid in ue_store_ids.split(",") if sid.strip()]
     ue_map = {rappi_ids[i]: ue_ids[i] for i in range(min(len(rappi_ids), len(ue_ids)))}
 
-    now = _time.time()
     result: dict[str, dict] = {}
     to_check: list[str] = []
 
-    # Revisar cache primero
-    for rappi_id in rappi_ids:
-        cached = _status_cache.get(rappi_id)
-        if cached and now - cached["ts"] < _STATUS_CACHE_TTL:
-            result[rappi_id] = {"is_open": cached["is_open"]}
-        else:
-            to_check.append(rappi_id)
+    # Revisar cache primero (TTLCache maneja expiración automáticamente)
+    with _cache_lock:
+        for rappi_id in rappi_ids:
+            cached = _status_cache.get(rappi_id)
+            if cached is not None:
+                result[rappi_id] = {"is_open": cached}
+            else:
+                to_check.append(rappi_id)
 
     if not to_check:
         return result
@@ -220,7 +267,8 @@ def get_stores_status(
         futures = {executor.submit(check_one, sid): sid for sid in to_check}
         for future in as_completed(futures):
             store_id, is_open = future.result()
-            _status_cache[store_id] = {"is_open": is_open, "ts": now}
+            with _cache_lock:
+                _status_cache[store_id] = is_open
             result[store_id] = {"is_open": is_open}
 
     return result
@@ -278,10 +326,6 @@ _FEATURED_RESTAURANTS = [
     {"restaurant_id": "taqueria-san-juan-culiacan",  "rappi_store_id": "1923229914",  "ubereats_store_id": "1916b3b2-36c3-4a79-bdf6-7e2f97e6ded6", "cuisine": "Tacos",         "restaurant_name": "Taquería San Juan"},
 ]
 
-_featured_cache: dict = {"ts": 0.0, "data": []}
-_FEATURED_CACHE_TTL = 300  # 5 minutos
-
-
 @app.get("/products/featured")
 def get_featured_products(
     max_price: float = 100.0,
@@ -294,10 +338,10 @@ def get_featured_products(
     """
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
-    global _featured_cache
-    now = _time.time()
-    if now - _featured_cache["ts"] < _FEATURED_CACHE_TTL:
-        return [p for p in _featured_cache["data"] if p["price"] <= max_price]
+    with _cache_lock:
+        cached = _featured_cache_store.get("featured")
+    if cached is not None:
+        return [p for p in cached if p["price"] <= max_price]
 
     def fetch_one(r: dict) -> list[dict]:
         try:
@@ -338,11 +382,9 @@ def get_featured_products(
             all_products.extend(future.result())
 
     all_products.sort(key=lambda x: x["price"])
-    _featured_cache = {"ts": now, "data": all_products}
+    with _cache_lock:
+        _featured_cache_store["featured"] = all_products
     return [p for p in all_products if p["price"] <= max_price]
-
-
-_deals_cache: dict = {}  # { "pizza_100": {"ts": float, "data": list} }
 
 
 @app.get("/products/deals")
@@ -359,10 +401,11 @@ def get_deals(
     """
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
-    cache_key = f"{category.lower()}_{int(max_price)}"
-    now = _time.time()
-    if cache_key in _deals_cache and now - _deals_cache[cache_key]["ts"] < _FEATURED_CACHE_TTL:
-        return _deals_cache[cache_key]["data"]
+    cache_key = f"deals_{category.lower()}_{int(max_price)}"
+    with _cache_lock:
+        cached = _featured_cache_store.get(cache_key)
+    if cached is not None:
+        return cached
 
     restaurants = [r for r in _FEATURED_RESTAURANTS if r["cuisine"].lower() == category.lower()]
     if not restaurants:
@@ -447,13 +490,33 @@ def get_deals(
                 results.append(r)
 
     results.sort(key=lambda x: x["total"])
-    _deals_cache[cache_key] = {"ts": now, "data": results}
+    with _cache_lock:
+        _featured_cache_store[cache_key] = results
     return results
 
 
+# Dominios permitidos para proxy de imagenes (anti-SSRF)
+_PROXY_ALLOWED_HOSTS = {
+    "images.rappi.com.mx", "images.rappi.com",
+    "cn-geo1.uber.com", "tb-static.uber.com", "www.ubereats.com",
+    "d1ralsognjng37.cloudfront.net", "duyt4h9nfnj50.cloudfront.net",
+    "d3i4yxtzktqr9n.cloudfront.net",
+    "img.uber.com",
+}
+
+
 @app.get("/proxy/image")
-def proxy_image(url: str = Query(...)):
+def proxy_image(request: Request, url: str = Query(..., max_length=2048)):
     """Proxy para imágenes con hotlink protection (ej. CDN de Rappi)."""
+    client_ip = request.client.host if request.client else "unknown"
+    _check_rate_limit(client_ip, 120, "proxy")  # imagenes: limite mas alto
+    # Validar que la URL sea de un dominio permitido (anti-SSRF)
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise HTTPException(status_code=400, detail="URL no valida")
+    if parsed.hostname not in _PROXY_ALLOWED_HOSTS:
+        raise HTTPException(status_code=400, detail="Dominio no permitido")
+
     if "ubereats.com" in url or "cloudfront.net" in url or "uber.com" in url:
         referer = "https://www.ubereats.com/"
     else:
@@ -468,8 +531,8 @@ def proxy_image(url: str = Query(...)):
             timeout=10,
         )
         resp.raise_for_status()
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=502, detail="No se pudo cargar la imagen")
     return Response(
         content=resp.content,
         media_type=resp.headers.get("content-type", "image/png"),
@@ -482,7 +545,8 @@ def get_rappi_menu(store_id: str, lat: float = DEFAULT_LAT, lng: float = DEFAULT
     try:
         products = rappi.fetch_menu(store_id, lat, lng)
     except Exception as e:
-        raise HTTPException(status_code=502, detail=str(e))
+        print(f"[menu/rappi] error: {e}")
+        raise HTTPException(status_code=502, detail="Error al cargar menu de Rappi")
     return {"store_id": store_id, "products": [p.__dict__ for p in products]}
 
 
@@ -491,7 +555,8 @@ def get_ubereats_menu(store_id: str, lat: float = DEFAULT_LAT, lng: float = DEFA
     try:
         products = ubereats.fetch_menu(store_id, lat, lng)
     except Exception as e:
-        raise HTTPException(status_code=502, detail=str(e))
+        print(f"[menu/ubereats] error: {e}")
+        raise HTTPException(status_code=502, detail="Error al cargar menu de Uber Eats")
     return {"store_id": store_id, "products": [p.__dict__ for p in products]}
 
 
@@ -504,10 +569,11 @@ def get_didi_menu(store_id: str):
     """
     try:
         products = didi.fetch_menu(store_id, lat=0, lng=0)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Tienda DiDi no encontrada")
     except Exception as e:
-        raise HTTPException(status_code=502, detail=str(e))
+        print(f"[menu/didi] error: {e}")
+        raise HTTPException(status_code=502, detail="Error al cargar menu de DiDi")
     return {"store_id": store_id, "products": [p.__dict__ for p in products]}
 
 
@@ -590,11 +656,13 @@ def get_combined_menu(
 
 
 @app.post("/compare", response_model=list[QuoteResponse])
-def compare(req: CompareRequest):
+def compare(request: Request, req: CompareRequest):
     """
     Cotiza el precio final de un producto en Rappi y Uber Eats en paralelo.
     Devuelve la lista de quotes ordenada de más barato a más caro (total).
     """
+    client_ip = request.client.host if request.client else "unknown"
+    _check_rate_limit(client_ip, _GENERAL_RATE_LIMIT, "compare")
     quotes: list[PriceQuote] = []
     errors: list[str] = []
 
@@ -647,52 +715,90 @@ def compare(req: CompareRequest):
 
 @app.get("/search")
 def search_restaurants(
-    q: str,
-    lat: float = DEFAULT_LAT,
-    lng: float = DEFAULT_LNG,
+    request: Request,
+    q: str = Query(..., max_length=200),
+    lat: float = Query(DEFAULT_LAT, ge=-90, le=90),
+    lng: float = Query(DEFAULT_LNG, ge=-180, le=180),
 ):
     """
     Búsqueda bidireccional: busca en Rappi y UberEats, cruza resultados por nombre.
     Auto-guarda restaurantes nuevos en Supabase.
+    3 capas de protección: rate limit → cache → request coalescing.
     """
+    # Capa 3: Rate limit por IP
+    client_ip = request.client.host if request.client else "unknown"
+    _check_rate_limit(client_ip)
+
+    # Capa 1: Cache — misma búsqueda reciente = 0 requests externos
+    cache_key = _normalize_search_key(q, lat, lng)
+    with _cache_lock:
+        cached = _search_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    # Capa 2: Request coalescing — si otra request ya busca lo mismo, esperar su resultado
+    with _inflight_lock:
+        if cache_key in _inflight:
+            event = _inflight[cache_key]
+        else:
+            event = None
+            _inflight[cache_key] = threading.Event()
+
+    if event is not None:
+        # Otra request ya está buscando esto — esperar hasta 15s
+        event.wait(timeout=15)
+        with _cache_lock:
+            result = _search_cache.get(cache_key)
+        if result is not None:
+            return result
+        # Si no hay resultado en cache, continuar con búsqueda propia (fallback)
+
+    try:
+        merged = _do_search(q, lat, lng)
+    finally:
+        # Señalizar a requests que esperaban y limpiar
+        with _inflight_lock:
+            evt = _inflight.pop(cache_key, None)
+        if evt:
+            evt.set()
+
+    # Guardar en cache
+    with _cache_lock:
+        _search_cache[cache_key] = merged
+
+    return merged
+
+
+def _do_search(q: str, lat: float, lng: float) -> list[dict]:
+    """Ejecuta la búsqueda real contra Rappi y UberEats."""
     from concurrent.futures import ThreadPoolExecutor
     from kupi.connectors.ubereats.connector import _call_ubereats, _build_headers, _BASE_URL
 
     def search_ue() -> list[dict]:
         try:
             headers = _build_headers(lat, lng)
-            body = {
-                "userQuery": q,
-                "date": "",
-                "startTime": 0,
-                "endTime": 0,
-                "carouselId": "",
-                "sortAndFilters": [],
-                "diningMode": "DELIVERY",
-                "vertical": "ALL",
-            }
-            data = _call_ubereats(f"{_BASE_URL}/getSearchFeedV1?localeCode=mx", headers, body)
+            body = {"userQuery": q, "diningMode": "DELIVERY"}
+            data = _call_ubereats(f"{_BASE_URL}/getSearchSuggestionsV1?localeCode=mx", headers, body)
+            items = data.get("data", [])
+            if not isinstance(items, list):
+                return []
             results = []
-            for feed_item in data.get("data", {}).get("feedItems", []):
-                store = feed_item.get("store", {}) or {}
-                store_uuid = store.get("storeUuid", "")
+            for item in items:
+                if not isinstance(item, dict) or item.get("type") != "store":
+                    continue
+                store = item.get("store", {}) or {}
+                store_uuid = store.get("uuid", "")
                 if not store_uuid:
                     continue
                 title = store.get("title", "")
                 image = store.get("heroImageUrl", "") or ""
-                meta = store.get("meta", {}) or {}
-                rating_text = ""
-                for tag in meta.get("tags", []):
-                    if "rating" in str(tag).lower() or "." in str(tag.get("text", "")):
-                        rating_text = tag.get("text", "")
-                        break
                 results.append({
                     "store_id": store_uuid,
                     "brand_name": title,
                     "image_url": image,
-                    "eta": meta.get("deliveryEta", {}).get("text", "") if isinstance(meta.get("deliveryEta"), dict) else "",
+                    "eta": "",
                     "shipping_cost": 0,
-                    "rating": rating_text,
+                    "rating": "",
                 })
             return results
         except Exception as e:
@@ -747,6 +853,7 @@ def search_restaurants(
                 "delivery_fee_preview": f"${rr['shipping_cost']:.0f}" if rr["shipping_cost"] else "",
                 "eta_preview": rr.get("eta", ""),
                 "rating": str(rr.get("rating", "") or best_ue.get("rating", "")),
+                "matching_products": rr.get("matching_products", []),
             })
 
     # Agregar Rappi sin match
@@ -760,6 +867,7 @@ def search_restaurants(
                 "delivery_fee_preview": f"${rr['shipping_cost']:.0f}" if rr["shipping_cost"] else "",
                 "eta_preview": rr.get("eta", ""),
                 "rating": str(rr.get("rating", "")),
+                "matching_products": rr.get("matching_products", []),
             })
 
     # Agregar UE sin match
@@ -773,19 +881,47 @@ def search_restaurants(
                 "delivery_fee_preview": "",
                 "eta_preview": ue.get("eta", ""),
                 "rating": str(ue.get("rating", "")),
+                "matching_products": [],
             })
 
-    # Auto-guardar en Supabase en background
+    # Auto-guardar en Supabase en background (con cliente propio para el thread)
     def _save_to_db():
         try:
-            from kupi.catalog.restaurants import upsert_restaurant
+            import os
+            from supabase import create_client
+            url = os.environ.get("SUPABASE_URL", "")
+            key = os.environ.get("SUPABASE_SECRET_KEY", "")
+            if not url or not key:
+                return
+            sb = create_client(url, key)
             for r in merged:
-                upsert_restaurant(
-                    name=r["restaurant_name"],
-                    rappi_store_id=r.get("rappi_store_id"),
-                    ubereats_store_id=r.get("ubereats_store_id"),
-                    image_url=r.get("image_url", ""),
-                )
+                name = r["restaurant_name"]
+                rappi_id = r.get("rappi_store_id")
+                ue_id = r.get("ubereats_store_id")
+                # Buscar si ya existe
+                existing = None
+                if rappi_id:
+                    resp = sb.table("restaurants").select("id,rappi_store_id,ubereats_store_id").eq("rappi_store_id", rappi_id).limit(1).execute()
+                    if resp.data:
+                        existing = resp.data[0]
+                if not existing and ue_id:
+                    resp = sb.table("restaurants").select("id,rappi_store_id,ubereats_store_id").eq("ubereats_store_id", ue_id).limit(1).execute()
+                    if resp.data:
+                        existing = resp.data[0]
+                row = {"name": name, "image_url": r.get("image_url", ""), "city": "culiacan", "match_confidence": "auto"}
+                if rappi_id:
+                    row["rappi_store_id"] = rappi_id
+                if ue_id:
+                    row["ubereats_store_id"] = ue_id
+                if existing:
+                    update = {k: v for k, v in row.items() if v}
+                    if rappi_id and not existing.get("rappi_store_id"):
+                        update["rappi_store_id"] = rappi_id
+                    if ue_id and not existing.get("ubereats_store_id"):
+                        update["ubereats_store_id"] = ue_id
+                    sb.table("restaurants").update(update).eq("id", existing["id"]).execute()
+                else:
+                    sb.table("restaurants").insert(row).execute()
         except Exception as e:
             print(f"[auto-save] error: {e}")
 
@@ -808,10 +944,10 @@ def get_popular_restaurants(
     from concurrent.futures import ThreadPoolExecutor, as_completed
     from kupi.connectors.ubereats.connector import _call_ubereats, _build_headers, _BASE_URL
 
-    global _popular_cache
-    now = _time.time()
-    if now - _popular_cache["ts"] < _POPULAR_CACHE_TTL:
-        return _popular_cache["data"]
+    with _cache_lock:
+        cached = _popular_cache_store.get("popular")
+    if cached is not None:
+        return cached
 
     try:
         from kupi.catalog.restaurants import get_all
@@ -836,11 +972,12 @@ def get_popular_restaurants(
         ue_id = r.get("ubereats_store_id")
         rappi_id = r.get("rappi_store_id")
 
-        # Revisar cache
+        # Revisar cache (TTLCache maneja expiración automáticamente)
         cache_key = ue_id or rappi_id or ""
-        cached = _status_cache.get(cache_key)
-        if cached and now - cached["ts"] < _STATUS_CACHE_TTL:
-            is_open = cached["is_open"]
+        with _cache_lock:
+            cached_status = _status_cache.get(cache_key)
+        if cached_status is not None:
+            is_open = cached_status
         elif ue_id:
             # UberEats como fuente de verdad
             try:
@@ -848,7 +985,8 @@ def get_popular_restaurants(
                 body = {"storeUuid": ue_id, "diningMode": "DELIVERY", "time": {"asap": True}, "cbType": "EATER_ENDORSED"}
                 data = _call_ubereats(f"{_BASE_URL}/getStoreV1?localeCode=mx", headers, body).get("data", {})
                 is_open = not data.get("closedMessage", "")
-                _status_cache[cache_key] = {"is_open": is_open, "ts": now}
+                with _cache_lock:
+                    _status_cache[cache_key] = is_open
             except Exception:
                 pass
         elif rappi_id:
@@ -856,7 +994,8 @@ def get_popular_restaurants(
             try:
                 data = rappi._fetch_store(rappi_id, lat, lng)
                 is_open = data.get("status") == "OPEN"
-                _status_cache[cache_key] = {"is_open": is_open, "ts": now}
+                with _cache_lock:
+                    _status_cache[cache_key] = is_open
             except Exception:
                 pass
 
@@ -880,7 +1019,8 @@ def get_popular_restaurants(
 
     # Abiertos primero, luego cerrados
     results.sort(key=lambda r: (0 if r["is_open"] else 1, r["restaurant_name"]))
-    _popular_cache = {"ts": now, "data": results}
+    with _cache_lock:
+        _popular_cache_store["popular"] = results
     return results
 
 
@@ -894,21 +1034,33 @@ def get_coupons_endpoint(restaurant_id: str | None = None):
         from kupi.catalog.coupons import get_coupons
         return get_coupons(restaurant_id)
     except Exception as e:
-        raise HTTPException(status_code=502, detail=str(e))
+        print(f"[coupons] error: {e}")
+        raise HTTPException(status_code=502, detail="Error al cargar cupones")
 
 
 @app.post("/coupons/refresh")
 def refresh_coupons_endpoint(
+    request: Request,
     lat: float = DEFAULT_LAT,
     lng: float = DEFAULT_LNG,
 ):
     """
     Escanea Rappi y UberEats en tiempo real y actualiza la tabla de cupones en Supabase.
-    Operación costosa (~10-30s) - llamar solo desde un job periódico o manualmente.
+    Operación costosa (~10-30s) - protegido con API key o rate limit estricto.
     """
+    # Proteger con API key si esta configurada, si no, rate limit estricto
+    api_key = os.environ.get("KUPI_ADMIN_KEY", "")
+    req_key = request.headers.get("x-api-key", "")
+    if api_key and req_key != api_key:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    if not api_key:
+        # Sin API key configurada: rate limit muy estricto (3/min)
+        client_ip = request.client.host if request.client else "unknown"
+        _check_rate_limit(client_ip, 3, "refresh")
+
     try:
         from kupi.catalog.coupons import refresh_coupons
         count = refresh_coupons(lat, lng)
         return {"saved": count}
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=502, detail="Error al refrescar cupones")

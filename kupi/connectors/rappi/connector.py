@@ -277,7 +277,8 @@ def search_stores(query: str, lat: float, lng: float) -> list[dict]:
     """
     Busca restaurantes en Rappi usando unified-search (primario, ~19+ resultados)
     con fallback a unified-suggestions (~4 resultados).
-    Retorna lista de dicts con store_id, brand_name, image_url, eta, shipping_cost, rating.
+    Retorna lista de dicts con store_id, brand_name, image_url, eta, shipping_cost, rating, matching_products.
+    matching_products: lista de productos que coinciden con la búsqueda (nombre, precio, imagen).
     """
     params = {
         "is_prime": "false",
@@ -318,6 +319,21 @@ def search_stores(query: str, lat: float, lng: float) -> list[dict]:
                 name = name.split(" - ", 1)[-1]
             logo = store.get("logo", "")
             image_url = f"{_LOGO_CDN}{logo}" if logo and not logo.startswith("http") else logo
+            # Parsear productos que matchean la búsqueda
+            matching_products = []
+            for p in store.get("products", []):
+                p_name = p.get("name", "")
+                p_price = float(p.get("price", 0) or 0)
+                p_img = p.get("image", "")
+                if p_img and not p_img.startswith("http"):
+                    p_img = f"{_IMAGE_CDN}{p_img}"
+                if p_name and p_price > 0:
+                    matching_products.append({
+                        "name": p_name,
+                        "price": p_price,
+                        "image_url": p_img,
+                        "product_id": str(p.get("product_id", "")),
+                    })
             results.append({
                 "store_id": store_id,
                 "brand_name": name,
@@ -325,6 +341,7 @@ def search_stores(query: str, lat: float, lng: float) -> list[dict]:
                 "eta": store.get("eta", ""),
                 "shipping_cost": float(store.get("delivery_price", 0) or 0),
                 "rating": float(store.get("rating", 0) or 0),
+                "matching_products": matching_products,
             })
         if results:
             return results

@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
 import { useSearchParams } from "next/navigation";
-import { ArrowLeft, RefreshCw, MapPin, Search } from "lucide-react";
+import { ArrowLeft, RefreshCw, MapPin, Search, Heart, Bell, LogOut } from "lucide-react";
 import Link from "next/link";
 import PlatformCompareCard from "../../components/PlatformCompareCard";
 import CTAButton from "../../components/CTAButton";
@@ -10,6 +10,10 @@ import { RestaurantConfig } from "../../lib/restaurants";
 import { useLocation } from "../../lib/location";
 import { useLang } from "../../lib/i18n";
 import KupiLogo from "../../components/KupiLogo";
+import FavoriteButton from "../../components/FavoriteButton";
+import ThemeToggle from "../../components/ThemeToggle";
+import LanguageToggle from "../../components/LanguageToggle";
+import { useAuth } from "../../lib/auth";
 
 const _COMPLEMENT_RE = new RegExp(
   [
@@ -72,6 +76,9 @@ interface ListProduct {
 export default function CompareClient({ restaurant }: Props) {
   const { location } = useLocation();
   const { t } = useLang();
+  const { user, signOut } = useAuth();
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
   const searchParams = useSearchParams();
   const preselectRappi = searchParams.get("r");
   const preselectUE = searchParams.get("u");
@@ -110,9 +117,15 @@ export default function CompareClient({ restaurant }: Props) {
           ...data.only_ubereats.map((p) => ({ ...p, exclusivePlatform: "ubereats" as const })),
         ];
         const merged = [...matched, ...exclusive].sort((a, b) => {
+          // 1. Productos con imagen primero
+          const aImg = a.image_url ? 0 : 1;
+          const bImg = b.image_url ? 0 : 1;
+          if (aImg !== bImg) return aImg - bImg;
+          // 2. Complementos al final
           const aComp = isComplement(a.name);
           const bComp = isComplement(b.name);
           if (aComp !== bComp) return aComp ? 1 : -1;
+          // 3. Por precio
           return a.price - b.price;
         });
         setAllProducts(merged);
@@ -125,6 +138,17 @@ export default function CompareClient({ restaurant }: Props) {
     loadMenu();
     autoSelectedRef.current = false;
   }, [restaurant, location]);
+
+  // Cerrar menú de usuario al hacer click fuera
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
+        setUserMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
 
   const handleSelectProduct = (product: ListProduct) => {
     setSelectedProduct(product);
@@ -211,18 +235,83 @@ export default function CompareClient({ restaurant }: Props) {
         <div className="w-px h-6 bg-[var(--border)] shrink-0" />
 
         {/* Restaurante */}
-        <div className="min-w-0">
-          <span
-            className="text-[16px] font-semibold text-[var(--text-primary)] truncate block"
-            style={{ fontFamily: "var(--font-display)" }}
-          >
-            {restaurant.name}
-          </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span
+              className="text-[16px] font-semibold text-[var(--text-primary)] truncate"
+              style={{ fontFamily: "var(--font-display)" }}
+            >
+              {restaurant.name}
+            </span>
+            <div className="flex items-center gap-1 shrink-0">
+              {restaurant.rappi_store_id && (
+                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "#FF441F22", color: "#FF441F" }}>Rappi</span>
+              )}
+              {restaurant.ubereats_store_id && (
+                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "#06C16722", color: "#06C167" }}>Uber Eats</span>
+              )}
+            </div>
+          </div>
           <p className="text-[12px] text-[var(--text-muted)] flex items-center gap-1 mt-0.5">
             <MapPin size={11} className="text-[var(--brand)] shrink-0" />
             <span className="truncate">{location.label}</span>
           </p>
         </div>
+
+        {/* Idioma y tema */}
+        <LanguageToggle />
+        <ThemeToggle />
+
+        {/* Auth */}
+        {user ? (
+          <div className="relative shrink-0" ref={userMenuRef}>
+            <button
+              onClick={() => setUserMenuOpen(!userMenuOpen)}
+              className="w-8 h-8 rounded-full bg-[var(--brand-tint)] flex items-center justify-center"
+            >
+              <span className="text-xs font-semibold text-[var(--brand)]">
+                {(user.email?.[0] ?? "U").toUpperCase()}
+              </span>
+            </button>
+            {userMenuOpen && (
+              <div className="absolute right-0 top-full mt-2 w-48 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-lg overflow-hidden z-50">
+                <p className="px-4 py-2 text-[11px] text-[var(--text-muted)] truncate border-b border-[var(--border)]">
+                  {user.email}
+                </p>
+                <Link
+                  href="/favoritos"
+                  onClick={() => setUserMenuOpen(false)}
+                  className="flex items-center gap-2 px-4 py-2.5 text-[13px] text-[var(--text-primary)] hover:bg-[var(--bg)] transition-colors"
+                >
+                  <Heart size={14} />
+                  Mis favoritos
+                </Link>
+                <Link
+                  href="/favoritos"
+                  onClick={() => setUserMenuOpen(false)}
+                  className="flex items-center gap-2 px-4 py-2.5 text-[13px] text-[var(--text-primary)] hover:bg-[var(--bg)] transition-colors"
+                >
+                  <Bell size={14} />
+                  Mis alertas
+                </Link>
+                <button
+                  onClick={() => { signOut(); setUserMenuOpen(false); }}
+                  className="w-full flex items-center gap-2 px-4 py-2.5 text-[13px] text-red-500 hover:bg-[var(--bg)] transition-colors border-t border-[var(--border)]"
+                >
+                  <LogOut size={14} />
+                  Cerrar sesion
+                </button>
+              </div>
+            )}
+          </div>
+        ) : (
+          <Link
+            href="/login"
+            className="shrink-0 text-[13px] font-semibold text-[var(--brand)] hover:underline"
+          >
+            Iniciar sesion
+          </Link>
+        )}
       </div>
     </div>
   );
@@ -356,7 +445,18 @@ export default function CompareClient({ restaurant }: Props) {
                             Solo {PLATFORM_LABELS[p.exclusivePlatform]}
                           </span>
                         )}
-                        <p className="text-[14px] font-bold text-[var(--savings)]">${p.price.toFixed(0)}</p>
+                        <div className="flex items-center justify-between">
+                          <p className="text-[14px] font-bold text-[var(--savings)]">${p.price.toFixed(0)}</p>
+                          <FavoriteButton
+                            productName={p.name}
+                            restaurantName={restaurant.name}
+                            rappiProductId={p.rappi_product_id}
+                            ubereatsProductId={p.ubereats_product_id}
+                            rappiStoreId={restaurant.rappi_store_id}
+                            ubereatsStoreId={restaurant.ubereats_store_id}
+                            imageUrl={p.image_url}
+                          />
+                        </div>
                       </div>
                     </button>
                   );

@@ -142,6 +142,13 @@ export async function fetchCombinedMenu(
   return res.json() as Promise<CombinedMenuResponse>;
 }
 
+export interface MatchingProduct {
+  name: string;
+  price: number;
+  image_url: string;
+  product_id: string;
+}
+
 export interface SearchResult {
   restaurant_name: string;
   rappi_store_id: string | null;
@@ -150,6 +157,7 @@ export interface SearchResult {
   delivery_fee_preview: string;
   eta_preview: string;
   rating: string;
+  matching_products: MatchingProduct[];
 }
 
 export async function searchRestaurants(q: string, lat: number, lng: number): Promise<SearchResult[]> {

@@ -1,11 +1,12 @@
 "use client";
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Search, MapPin, Loader2, X } from "lucide-react";
+import { Search, MapPin, Loader2, X, Heart, Bell, LogOut } from "lucide-react";
 import Link from "next/link";
 import KupiLogo from "./KupiLogo";
 import ThemeToggle from "./ThemeToggle";
 import { useLocation, searchAddress, GeoSuggestion } from "../lib/location";
 import { useLang } from "../lib/i18n";
+import { useAuth } from "../lib/auth";
 import LanguageToggle from "./LanguageToggle";
 
 interface TopNavProps {
@@ -16,6 +17,9 @@ interface TopNavProps {
 export default function TopNav({ search, onSearch }: TopNavProps = {}) {
   const { location, setLocation } = useLocation();
   const { t } = useLang();
+  const { user, signOut } = useAuth();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
   const [editing, setEditing] = useState(false);
   const [input, setInput] = useState("");
   const [suggestions, setSuggestions] = useState<GeoSuggestion[]>([]);
@@ -57,11 +61,14 @@ export default function TopNav({ search, onSearch }: TopNavProps = {}) {
     }, 400);
   }, []);
 
-  // Cerrar dropdown al hacer click fuera
+  // Cerrar dropdowns al hacer click fuera
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         cancel();
+      }
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
       }
     };
     document.addEventListener("mousedown", handler);
@@ -168,10 +175,56 @@ export default function TopNav({ search, onSearch }: TopNavProps = {}) {
         {/* Toggle de paleta */}
         <ThemeToggle />
 
-        {/* Avatar */}
-        <div className="w-8 h-8 rounded-full bg-[var(--brand-tint)] flex items-center justify-center shrink-0">
-          <span className="text-xs font-semibold text-[var(--brand)]">JG</span>
-        </div>
+        {/* Auth */}
+        {user ? (
+          <div className="relative shrink-0" ref={menuRef}>
+            <button
+              onClick={() => setMenuOpen(!menuOpen)}
+              className="w-8 h-8 rounded-full bg-[var(--brand-tint)] flex items-center justify-center"
+            >
+              <span className="text-xs font-semibold text-[var(--brand)]">
+                {(user.email?.[0] ?? "U").toUpperCase()}
+              </span>
+            </button>
+            {menuOpen && (
+              <div className="absolute right-0 top-full mt-2 w-48 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-lg overflow-hidden z-50">
+                <p className="px-4 py-2 text-[11px] text-[var(--text-muted)] truncate border-b border-[var(--border)]">
+                  {user.email}
+                </p>
+                <Link
+                  href="/favoritos"
+                  onClick={() => setMenuOpen(false)}
+                  className="flex items-center gap-2 px-4 py-2.5 text-[13px] text-[var(--text-primary)] hover:bg-[var(--bg)] transition-colors"
+                >
+                  <Heart size={14} />
+                  Mis favoritos
+                </Link>
+                <Link
+                  href="/favoritos"
+                  onClick={() => setMenuOpen(false)}
+                  className="flex items-center gap-2 px-4 py-2.5 text-[13px] text-[var(--text-primary)] hover:bg-[var(--bg)] transition-colors"
+                >
+                  <Bell size={14} />
+                  Mis alertas
+                </Link>
+                <button
+                  onClick={() => { signOut(); setMenuOpen(false); }}
+                  className="w-full flex items-center gap-2 px-4 py-2.5 text-[13px] text-red-500 hover:bg-[var(--bg)] transition-colors border-t border-[var(--border)]"
+                >
+                  <LogOut size={14} />
+                  Cerrar sesion
+                </button>
+              </div>
+            )}
+          </div>
+        ) : (
+          <Link
+            href="/login"
+            className="shrink-0 text-[13px] font-semibold text-[var(--brand)] hover:underline"
+          >
+            Iniciar sesion
+          </Link>
+        )}
       </div>
     </nav>
   );
