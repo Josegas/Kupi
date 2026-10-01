@@ -1,7 +1,7 @@
 import time
 import requests
 from kupi.connectors.base import BaseConnector
-from kupi.core.config import RAPPI_TOKEN, RAPPI_DEVICE_ID
+from kupi.core.config import RAPPI_TOKEN, RAPPI_DEVICE_ID, RAPPI_AUTH_USER
 from kupi.core.models import Product, PriceQuote
 
 _HEADERS = {
@@ -21,6 +21,18 @@ _CART_BASE = "https://services.mxgrability.rappi.com/api/ms/shopping-cart"
 _IMAGE_CDN = "https://images.rappi.com.mx/products/"
 _LOGO_CDN = "https://images.rappi.com.mx/restaurants_logo/"
 _BG_CDN = "https://images.rappi.com.mx/restaurants_background/"
+
+_SEARCH_URL_PRIMARY = "https://services.mxgrability.rappi.com/api/pns-global-search-api/v1/unified-search"
+_SEARCH_URL_FALLBACK = "https://services.mxgrability.rappi.com/api/pns-global-search-api/v1/unified-suggestions"
+_SEARCH_IMG_CDN = "https://images.rappi.com.mx/web_theme/logos/"
+
+_HEADERS_SEARCH = {
+    **{k: v for k, v in _HEADERS.items()},
+    "app-version": "e1de6be43aa29091011474615d7ac0810051c36a",
+    "needappsflyerid": "false",
+    "vendor": "rappi",
+    "x-application-id": "rappi-microfront-web/e1de6be43aa29091011474615d7ac0810051c36a",
+}
 
 
 def _rappi_image(raw: str) -> str:
@@ -259,3 +271,98 @@ def _parse_summary(
         variant_label=variant_label,
         is_open=is_open,
     )
+
+
+def search_stores(query: str, lat: float, lng: float) -> list[dict]:
+    """
+    Busca restaurantes en Rappi usando unified-search (primario, ~19+ resultados)
+    con fallback a unified-suggestions (~4 resultados).
+    Retorna lista de dicts con store_id, brand_name, image_url, eta, shipping_cost, rating.
+    """
+    params = {
+        "is_prime": "false",
+        "unlimited_shipping": "false",
+    }
+    body = {
+        "lat": lat,
+        "lng": lng,
+        "query": query,
+        "options": {},
+    }
+
+    headers = {**_HEADERS_SEARCH}
+    if RAPPI_AUTH_USER:
+        headers["auth_user"] = RAPPI_AUTH_USER
+
+    results = []
+
+    # Intento 1: unified-search (más resultados)
+    try:
+        resp = requests.post(
+            _SEARCH_URL_PRIMARY,
+            params=params,
+            headers=headers,
+            json=body,
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        stores = data.get("stores", [])
+        for store in stores:
+            store_id = str(store.get("store_id", ""))
+            if not store_id:
+                continue
+            name = store.get("store_name", "")
+            # Quitar prefijo numérico "41230063 - Little Caesars..."
+            if " - " in name:
+                name = name.split(" - ", 1)[-1]
+            logo = store.get("logo", "")
+            image_url = f"{_LOGO_CDN}{logo}" if logo and not logo.startswith("http") else logo
+            results.append({
+                "store_id": store_id,
+                "brand_name": name,
+                "image_url": image_url,
+                "eta": store.get("eta", ""),
+                "shipping_cost": float(store.get("delivery_price", 0) or 0),
+                "rating": float(store.get("rating", 0) or 0),
+            })
+        if results:
+            return results
+    except Exception as e:
+        print(f"[Rappi] unified-search falló: {e}")
+
+    # Intento 2: unified-suggestions (fallback, menos resultados)
+    try:
+        resp = requests.post(
+            _SEARCH_URL_FALLBACK,
+            params=params,
+            headers=headers,
+            json=body,
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        for item in data.get("suggestions", []):
+            if item.get("type") != "store":
+                continue
+            store_data = item.get("store", {})
+            store_id = str(store_data.get("store_id", ""))
+            if not store_id:
+                continue
+            name = store_data.get("store_name", "")
+            if " - " in name:
+                name = name.split(" - ", 1)[-1]
+            logo = store_data.get("logo", "")
+            image_url = f"{_LOGO_CDN}{logo}" if logo and not logo.startswith("http") else logo
+            results.append({
+                "store_id": store_id,
+                "brand_name": name,
+                "image_url": image_url,
+                "eta": store_data.get("eta", ""),
+                "shipping_cost": float(store_data.get("delivery_price", 0) or 0),
+                "rating": float(store_data.get("rating", 0) or 0),
+            })
+    except Exception as e:
+        print(f"[Rappi] unified-suggestions falló: {e}")
+
+    return results

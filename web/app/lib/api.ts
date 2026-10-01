@@ -142,6 +142,39 @@ export async function fetchCombinedMenu(
   return res.json() as Promise<CombinedMenuResponse>;
 }
 
+export interface SearchResult {
+  restaurant_name: string;
+  rappi_store_id: string | null;
+  ubereats_store_id: string | null;
+  image_url: string;
+  delivery_fee_preview: string;
+  eta_preview: string;
+  rating: string;
+}
+
+export async function searchRestaurants(q: string, lat: number, lng: number): Promise<SearchResult[]> {
+  const params = new URLSearchParams({ q, lat: String(lat), lng: String(lng) });
+  const res = await fetch(`${API_URL}/search?${params}`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export interface PopularRestaurant {
+  restaurant_name: string;
+  rappi_store_id: string | null;
+  ubereats_store_id: string | null;
+  image_url: string;
+  cuisine: string;
+  is_open: boolean;
+}
+
+export async function fetchPopularRestaurants(lat: number, lng: number): Promise<PopularRestaurant[]> {
+  const params = new URLSearchParams({ lat: String(lat), lng: String(lng) });
+  const res = await fetch(`${API_URL}/restaurants/popular?${params}`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
 export async function compareProducts(req: CompareRequest): Promise<QuoteResponse[]> {
   const res = await fetch(`${API_URL}/compare`, {
     method: "POST",

@@ -306,13 +306,17 @@ def _parse_checkout(checkout_data: dict, product: Product, store_id: str, store_
         if fare_id == "eats_fare.delivery_fee":
             delivery_fee = amount
         elif "service_fee" in fare_id or "basket_dependent_fee" in fare_id or "tax_and_fees" in fare_id:
-            service_fee = amount
+            service_fee += amount
 
-    # No se ajusta el delivery fee por tier (Basica vs Prioritaria):
-    # UberEats balancea los fees entre tiers -- lo que sube en delivery baja en
-    # service fee, por lo que el TOTAL Prioritaria es casi identico al total Basica.
-
-    total = product.price + delivery_fee + service_fee
+    # Usar el total real del checkout (incluye descuentos y redondeos exactos)
+    checkout_total = _parse_money_text(payloads.get("total", {}).get("value", {}).get("text", ""))
+    if checkout_total > 0:
+        total = checkout_total
+        service_fee = round(total - product.price - delivery_fee, 2)
+        if service_fee < 0:
+            service_fee = 0.0
+    else:
+        total = product.price + delivery_fee + service_fee
 
     return PriceQuote(
         platform="ubereats",

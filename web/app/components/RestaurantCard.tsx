@@ -1,5 +1,6 @@
 import { Star } from "lucide-react";
 import Link from "next/link";
+import { proxyImage } from "../lib/api";
 
 interface Props {
   id: string;
@@ -10,11 +11,20 @@ interface Props {
   platforms: number;
   imageUrl?: string;
   isOpen?: boolean; // undefined = cargando (no bloquea), false = cerrado
+  href?: string; // ruta personalizada (para restaurantes dinámicos)
+  hasRappi?: boolean;
+  hasUberEats?: boolean;
 }
 
-export default function RestaurantCard({ id, name, cuisine, rating, fromPrice, platforms, imageUrl, isOpen }: Props) {
+export default function RestaurantCard({ id, name, cuisine, rating, fromPrice, platforms, imageUrl, isOpen, href, hasRappi = true, hasUberEats = true }: Props) {
   const closed = isOpen === false;
   const loading = isOpen === undefined;
+  const showRating = rating > 0;
+
+  const platformLabel =
+    hasRappi && hasUberEats ? "Rappi · Uber Eats" :
+    hasRappi ? "Rappi" :
+    hasUberEats ? "Uber Eats" : "";
 
   const cardBody = (
     <div
@@ -27,7 +37,17 @@ export default function RestaurantCard({ id, name, cuisine, rating, fromPrice, p
       {/* Imagen */}
       <div className="h-36 bg-[var(--bg)] relative">
         {imageUrl ? (
-          <img src={imageUrl} alt={name} className="w-full h-full object-cover" />
+          <img
+            src={proxyImage(imageUrl)}
+            alt={name}
+            className="w-full h-full object-cover"
+            loading="lazy"
+            onError={(e) => {
+              const img = e.target as HTMLImageElement;
+              if (img.src !== imageUrl) img.src = imageUrl;
+              else img.style.display = "none";
+            }}
+          />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-[var(--text-muted)] text-xs">
             Sin imagen
@@ -49,28 +69,35 @@ export default function RestaurantCard({ id, name, cuisine, rating, fromPrice, p
             <h3 className="text-[16px] font-bold text-[var(--text-primary)] leading-tight">{name}</h3>
             <div className="flex items-center gap-1.5 mt-1">
               <span className="text-[13px] text-[var(--text-secondary)]">{cuisine}</span>
-              <span className="text-[var(--text-muted)]">·</span>
-              <Star size={12} fill="var(--brand)" stroke="none" />
-              <span className="text-[13px] text-[var(--text-secondary)]">{rating.toFixed(1)}</span>
+              {showRating && (
+                <>
+                  <span className="text-[var(--text-muted)]">·</span>
+                  <Star size={12} fill="var(--brand)" stroke="none" />
+                  <span className="text-[13px] text-[var(--text-secondary)]">{rating.toFixed(1)}</span>
+                </>
+              )}
             </div>
           </div>
-          <span className="shrink-0 text-[12px] font-semibold px-2.5 py-1 rounded-full bg-[var(--brand-tint)] text-[var(--brand)]">
-            Rappi · Uber Eats
-          </span>
+          {platformLabel && (
+            <span className="shrink-0 text-[12px] font-semibold px-2.5 py-1 rounded-full bg-[var(--brand-tint)] text-[var(--brand)]">
+              {platformLabel}
+            </span>
+          )}
         </div>
 
         {closed ? (
           <p className="text-[13px] text-[var(--text-muted)]">No disponible ahora</p>
-        ) : (
+        ) : fromPrice > 0 ? (
           <p className="text-[15px] font-bold text-[var(--savings)]">
             Desde ${fromPrice.toFixed(0)}
           </p>
-        )}
+        ) : null}
       </div>
     </div>
   );
 
   if (closed || loading) return cardBody;
 
-  return <Link href={`/compare/${id}`}>{cardBody}</Link>;
+  const linkHref = href || `/compare/${id}`;
+  return <Link href={linkHref}>{cardBody}</Link>;
 }

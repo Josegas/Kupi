@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 RAPPI_DEVICE_ID: str = os.environ["RAPPI_DEVICE_ID"]
+RAPPI_AUTH_USER: str = os.getenv("RAPPI_AUTH_USER", "")
 
 def _load_rappi_token() -> str:
     # En desarrollo: leer directo del .env

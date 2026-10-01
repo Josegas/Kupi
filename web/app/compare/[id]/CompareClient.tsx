@@ -443,10 +443,18 @@ export default function CompareClient({ restaurant }: Props) {
             {/* Carga */}
             {loadingQuotes && (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {[
-                  { name: "Rappi", color: "#FF441F" },
-                  { name: "Uber Eats", color: "#06C167" },
-                ].map((p) => (
+                {(selectedProduct?.exclusivePlatform === "rappi"
+                  ? [{ name: "Rappi", color: "#FF441F" }]
+                  : selectedProduct?.exclusivePlatform === "ubereats"
+                  ? [{ name: "Uber Eats", color: "#06C167" }]
+                  : [
+                      ...(selectedProduct?.rappi_product_id ? [{ name: "Rappi", color: "#FF441F" }] : []),
+                      ...(selectedProduct?.ubereats_product_id ? [{ name: "Uber Eats", color: "#06C167" }] : []),
+                      ...(!selectedProduct?.rappi_product_id && !selectedProduct?.ubereats_product_id
+                        ? [{ name: "Rappi", color: "#FF441F" }, { name: "Uber Eats", color: "#06C167" }]
+                        : []),
+                    ]
+                ).map((p) => (
                   <div
                     key={p.name}
                     className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5 flex flex-col gap-4"
