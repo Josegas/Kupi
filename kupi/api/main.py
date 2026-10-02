@@ -43,13 +43,107 @@ rappi = RappiConnector()
 ubereats = UberEatsConnector()
 didi = DidiConnector()
 
+# Nombres de restaurantes conocidos: corregir nombres de sucursal a nombre real
+# Mapeo de nombres de sucursal → nombre real del restaurante.
+# Muchas franquicias usan nombres de sucursal internos (zona, plaza, etc.)
+# que la gente no reconoce. Este mapeo normaliza al nombre de marca.
+# Las claves deben ser lowercase; se buscan con `in` (substring match).
+_RESTAURANT_NAME_FIX = {
+    # Sushi
+    "malecon": "Sushi Factory",
+    "malecón": "Sushi Factory",
+    "sushi factory": "Sushi Factory",
+    # Pizza
+    "little caesars": "Little Caesars",
+    "lc humaya": "Little Caesars",
+    "lc forum": "Little Caesars",
+    "lc tres": "Little Caesars",
+    "pizza hut": "Pizza Hut",
+    "domino's": "Domino's Pizza",
+    "dominos": "Domino's Pizza",
+    # Hamburguesas
+    "mcdonald": "McDonald's",
+    "mc donald": "McDonald's",
+    "burger king": "Burger King",
+    "carl's jr": "Carl's Jr.",
+    "carls jr": "Carl's Jr.",
+    # Pollo
+    "kentucky": "KFC",
+    "church's": "Church's Chicken",
+    "churchs": "Church's Chicken",
+    # Café
+    "starbucks": "Starbucks",
+    "italian coffee": "Italian Coffee",
+    # Tacos
+    "taqueria san juan": "Taquería San Juan",
+    "taquería san juan": "Taquería San Juan",
+    # Helados / postres
+    "santa clara": "Santa Clara",
+    "dairy queen": "Dairy Queen",
+    # Conveniencia
+    "oxxo": "OXXO",
+    "7-eleven": "7-Eleven",
+    "7 eleven": "7-Eleven",
+}
+
+
+def _fix_restaurant_name(name: str) -> str:
+    """Corrige nombres de sucursal a nombre real del restaurante."""
+    key = name.strip().lower()
+    for pattern, fixed in _RESTAURANT_NAME_FIX.items():
+        if pattern in key:
+            return fixed
+    # Limpiar direcciones del final del nombre:
+    # "Tacos la Roma Boulevard Doctor Mora 1590" → "Tacos la Roma"
+    cleaned = _re.sub(
+        r'\s+(Avenida|Av\.?|Boulevard|Blvd\.?|Calle|Carretera|Carr\.?|Calz\.?|Calzada)\s+.*$',
+        '', name.strip(), flags=_re.IGNORECASE,
+    )
+    if cleaned and len(cleaned) >= 4 and cleaned != name.strip():
+        return cleaned
+    return name
+
+
+# Detecta nombres que son puramente direcciones o zonas genéricas (no restaurantes)
+_ADDRESS_PATTERN = _re.compile(
+    r'^(Avenida|Av\.?|Boulevard|Blvd\.?|Calle|Carretera|Carr\.?|Calz\.?|Calzada|Plaza)\s+',
+    _re.IGNORECASE,
+)
+# Nombres que son solo una zona/colonia de Culiacán (Rappi los usa como nombre de sucursal)
+_ZONE_NAMES = {
+    "humaya", "las quintas", "montebello", "tres rios", "tres ríos",
+    "culiacan", "culiacán", "nuevo culiacán", "nuevo culiacan",
+    "universitarios", "chapultepec", "guadalupe", "la primavera",
+    "el barrio", "centro", "isla musala", "stanza", "country",
+    "las palmas", "san cristobal", "san cristóbal", "perisur",
+    "fracc portalegre", "portalegre", "la campiña", "la conquista",
+    "lomas del boulevard", "infonavit barrancos", "barrancos",
+}
+
+
+def _is_address_name(name: str) -> bool:
+    """Detecta si un nombre de restaurante es en realidad una dirección o zona."""
+    s = name.strip()
+    if _ADDRESS_PATTERN.match(s):
+        return True
+    # Tiene número de calle (4+ dígitos)
+    if _re.search(r'\b\d{4,}\b', s):
+        return True
+    # Es una zona conocida
+    if s.lower().strip() in _ZONE_NAMES:
+        return True
+    return False
+
 # ══════════════════════════════════════════════════════════════════════
 # Capa 1: Cache de resultados — misma búsqueda = 0 requests externos
 # ══════════════════════════════════════════════════════════════════════
-_search_cache = TTLCache(maxsize=2048, ttl=120)      # búsquedas, 2 min
+_search_cache = TTLCache(maxsize=2048, ttl=180)      # búsquedas, 3 min
 _status_cache = TTLCache(maxsize=4096, ttl=600)       # status abierto/cerrado, 10 min
 _popular_cache_store = TTLCache(maxsize=1, ttl=300)   # populares, 5 min
 _featured_cache_store = TTLCache(maxsize=4, ttl=300)  # featured/deals, 5 min
+_image_cache = TTLCache(maxsize=512, ttl=3600)         # imágenes proxy, 1h (bytes)
+_image_cache_lock = threading.Lock()
+_ue_products_cache = TTLCache(maxsize=256, ttl=600)    # productos UE por tienda, 10 min
 _cache_lock = threading.Lock()
 
 # ══════════════════════════════════════════════════════════════════════
@@ -122,6 +216,7 @@ class QuoteResponse(BaseModel):
     variant_label: str = ""
     is_open: bool = True
     opens_at: str = ""
+    is_estimate: bool = False
 
 
 # --- Endpoints ---
@@ -314,17 +409,26 @@ def _is_non_food(name: str) -> bool:
     return bool(_NON_FOOD_RE.search(name.strip()))
 
 
-_FEATURED_RESTAURANTS = [
-    {"restaurant_id": "little-caesars-culiacan",    "rappi_store_id": "1923772704",  "ubereats_store_id": "793b1eae-e077-44d0-8744-cf23f54fec50", "cuisine": "Pizza",         "restaurant_name": "Little Caesars"},
-    {"restaurant_id": "pizza-hut-culiacan",          "rappi_store_id": "1923220069",  "ubereats_store_id": "e53caf1b-90b4-4c47-a0e0-6b8f63f65337", "cuisine": "Pizza",         "restaurant_name": "Pizza Hut"},
-    {"restaurant_id": "pizzeta-culiacan",            "rappi_store_id": "1923214369",  "ubereats_store_id": "800cdf3a-43c7-4bec-936e-a11d978b2143", "cuisine": "Pizza",         "restaurant_name": "Pizzeta"},
-    {"restaurant_id": "dominos-culiacan",            "rappi_store_id": "1930069672",  "ubereats_store_id": "cdc441e1-fca8-563c-bea6-d76717f401f9", "cuisine": "Pizza",         "restaurant_name": "Domino's Pizza"},
-    {"restaurant_id": "kfc-culiacan",                "rappi_store_id": "1923218753",  "ubereats_store_id": "ff1cda7d-6ac6-4b0f-a276-ff8e49fd63df", "cuisine": "Pollo",         "restaurant_name": "KFC"},
-    {"restaurant_id": "starbucks-culiacan",          "rappi_store_id": "1923761853",  "ubereats_store_id": "fa88c37a-8e40-43fc-a5c1-a1b288090fc1", "cuisine": "Café",          "restaurant_name": "Starbucks"},
-    {"restaurant_id": "mcdonalds-culiacan",          "rappi_store_id": "1923235741",  "ubereats_store_id": "dd6ea249-d885-464f-a73d-8e67e62068c7", "cuisine": "Hamburguesas",  "restaurant_name": "McDonald's"},
-    {"restaurant_id": "sushi-city-culiacan",         "rappi_store_id": "1930209629",  "ubereats_store_id": "2ef66044-c618-440c-8775-4fb2f2bfd9fb", "cuisine": "Sushi",         "restaurant_name": "Sushi City"},
-    {"restaurant_id": "taqueria-san-juan-culiacan",  "rappi_store_id": "1923229914",  "ubereats_store_id": "1916b3b2-36c3-4a79-bdf6-7e2f97e6ded6", "cuisine": "Tacos",         "restaurant_name": "Taquería San Juan"},
-]
+def _get_featured_restaurants() -> list[dict]:
+    """Carga restaurantes desde Supabase (con ambas plataformas) para featured/deals."""
+    try:
+        from kupi.catalog.restaurants import get_all
+        all_r = get_all()
+        # Solo restaurantes con ambas plataformas (para poder comparar precios)
+        return [
+            {
+                "restaurant_id": f"{r.get('rappi_store_id', '')}-{r.get('ubereats_store_id', '')}",
+                "rappi_store_id": r["rappi_store_id"],
+                "ubereats_store_id": r["ubereats_store_id"],
+                "cuisine": r.get("cuisine", ""),
+                "restaurant_name": _fix_restaurant_name(r.get("name", "")),
+            }
+            for r in all_r
+            if r.get("rappi_store_id") and r.get("ubereats_store_id")
+        ]
+    except Exception as e:
+        print(f"[featured] error cargando restaurantes de BD: {e}")
+        return []
 
 @app.get("/products/featured")
 def get_featured_products(
@@ -372,12 +476,15 @@ def get_featured_products(
                 "category": r["cuisine"],
                 "rappi_product_id": p.get("rappi_product_id", ""),
                 "ubereats_product_id": p.get("ubereats_product_id", ""),
+                "rappi_store_id": r["rappi_store_id"],
+                "ubereats_store_id": r["ubereats_store_id"],
             })
         return results
 
     all_products: list[dict] = []
     with ThreadPoolExecutor(max_workers=9) as executor:
-        futures = [executor.submit(fetch_one, r) for r in _FEATURED_RESTAURANTS]
+        featured = _get_featured_restaurants()
+        futures = [executor.submit(fetch_one, r) for r in featured]
         for future in as_completed(futures):
             all_products.extend(future.result())
 
@@ -407,7 +514,7 @@ def get_deals(
     if cached is not None:
         return cached
 
-    restaurants = [r for r in _FEATURED_RESTAURANTS if r["cuisine"].lower() == category.lower()]
+    restaurants = [r for r in _get_featured_restaurants() if r["cuisine"].lower() == category.lower()]
     if not restaurants:
         return []
 
@@ -507,15 +614,25 @@ _PROXY_ALLOWED_HOSTS = {
 
 @app.get("/proxy/image")
 def proxy_image(request: Request, url: str = Query(..., max_length=2048)):
-    """Proxy para imágenes con hotlink protection (ej. CDN de Rappi)."""
+    """Proxy para imágenes con hotlink protection + cache en memoria."""
     client_ip = request.client.host if request.client else "unknown"
-    _check_rate_limit(client_ip, 120, "proxy")  # imagenes: limite mas alto
-    # Validar que la URL sea de un dominio permitido (anti-SSRF)
+    _check_rate_limit(client_ip, 120, "proxy")
+    # Validar dominio (anti-SSRF)
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https"):
         raise HTTPException(status_code=400, detail="URL no valida")
     if parsed.hostname not in _PROXY_ALLOWED_HOSTS:
         raise HTTPException(status_code=400, detail="Dominio no permitido")
+
+    # Cache en memoria: si ya descargamos esta imagen, servirla directo
+    with _image_cache_lock:
+        cached = _image_cache.get(url)
+    if cached:
+        return Response(
+            content=cached["bytes"],
+            media_type=cached["type"],
+            headers={"Cache-Control": "public, max-age=86400", "X-Cache": "HIT"},
+        )
 
     if "ubereats.com" in url or "cloudfront.net" in url or "uber.com" in url:
         referer = "https://www.ubereats.com/"
@@ -533,10 +650,18 @@ def proxy_image(request: Request, url: str = Query(..., max_length=2048)):
         resp.raise_for_status()
     except Exception:
         raise HTTPException(status_code=502, detail="No se pudo cargar la imagen")
+
+    content_type = resp.headers.get("content-type", "image/png")
+    img_bytes = resp.content
+    # Solo cachear imágenes < 500KB para no saturar memoria
+    if len(img_bytes) < 512_000:
+        with _image_cache_lock:
+            _image_cache[url] = {"bytes": img_bytes, "type": content_type}
+
     return Response(
-        content=resp.content,
-        media_type=resp.headers.get("content-type", "image/png"),
-        headers={"Cache-Control": "public, max-age=86400"},
+        content=img_bytes,
+        media_type=content_type,
+        headers={"Cache-Control": "public, max-age=86400", "X-Cache": "MISS"},
     )
 
 
@@ -579,7 +704,7 @@ def get_didi_menu(store_id: str):
 
 @app.get("/didi/stores")
 def list_didi_stores():
-    """Lista todas las sucursales de DiDi disponibles en Culiacán."""
+    """Lista todas las sucursales de DiDi disponibles."""
     from kupi.connectors.didi.connector import _STORES
     return {
         "count": len(_STORES),
@@ -769,36 +894,107 @@ def search_restaurants(
     return merged
 
 
+def _fetch_ue_products_cached(store_id: str, lat: float, lng: float) -> list[dict]:
+    """Obtiene todos los productos de una tienda UE con cache de 10 min."""
+    cache_key = f"ue_menu_{store_id}"
+    with _cache_lock:
+        cached = _ue_products_cache.get(cache_key)
+    if cached is not None:
+        return cached
+    try:
+        ue_products = ubereats.fetch_menu(store_id, lat, lng)
+        all_prods = [
+            {"name": p.name, "price": p.price, "image_url": p.image_url or "", "product_id": p.product_id}
+            for p in ue_products if p.price > 0
+        ]
+        with _cache_lock:
+            _ue_products_cache[cache_key] = all_prods
+        return all_prods
+    except Exception as e:
+        print(f"[UE products] {store_id}: {e}")
+        return []
+
+
+def _fetch_ue_products_for_search(store_id: str, query: str, lat: float, lng: float) -> list[dict]:
+    """Busca productos en una tienda UberEats que matcheen con la query de búsqueda."""
+    all_prods = _fetch_ue_products_cached(store_id, lat, lng)
+    q_lower = query.lower()
+    q_words = q_lower.split()
+    matching = []
+    for p in all_prods:
+        name_lower = p["name"].lower()
+        if any(w in name_lower for w in q_words) or q_lower in name_lower:
+            matching.append(p)
+    # Si no hay match directo, tomar los primeros productos con imagen
+    if not matching:
+        for p in all_prods[:8]:
+            if p["price"] >= 45 and p["image_url"] and not _is_non_food(p["name"]):
+                matching.append(p)
+    return matching[:6]
+
+
 def _do_search(q: str, lat: float, lng: float) -> list[dict]:
     """Ejecuta la búsqueda real contra Rappi y UberEats."""
-    from concurrent.futures import ThreadPoolExecutor
+    from concurrent.futures import ThreadPoolExecutor, as_completed
     from kupi.connectors.ubereats.connector import _call_ubereats, _build_headers, _BASE_URL
 
     def search_ue() -> list[dict]:
         try:
             headers = _build_headers(lat, lng)
-            body = {"userQuery": q, "diningMode": "DELIVERY"}
-            data = _call_ubereats(f"{_BASE_URL}/getSearchSuggestionsV1?localeCode=mx", headers, body)
-            items = data.get("data", [])
-            if not isinstance(items, list):
+            body = {
+                "userQuery": q,
+                "date": "",
+                "startTime": 0,
+                "endTime": 0,
+                "sortAndFilters": [],
+                "vertical": "ALL",
+                "searchSource": "SEARCH_BAR",
+                "displayType": "SEARCH_RESULTS",
+                "searchType": "GLOBAL_SEARCH",
+                "keyName": "",
+                "cacheKey": "",
+                "recaptchaToken": "",
+            }
+            data = _call_ubereats(f"{_BASE_URL}/getSearchFeedV1?localeCode=mx", headers, body)
+            feed_items = data.get("data", {}).get("feedItems", [])
+            if not isinstance(feed_items, list):
                 return []
             results = []
-            for item in items:
-                if not isinstance(item, dict) or item.get("type") != "store":
+            for item in feed_items:
+                if not isinstance(item, dict) or item.get("type") != "REGULAR_STORE":
                     continue
                 store = item.get("store", {}) or {}
-                store_uuid = store.get("uuid", "")
+                store_uuid = store.get("storeUuid", "")
                 if not store_uuid:
                     continue
-                title = store.get("title", "")
-                image = store.get("heroImageUrl", "") or ""
+                title_obj = store.get("title", {})
+                title = title_obj.get("text", "") if isinstance(title_obj, dict) else str(title_obj)
+                # Imagen: tomar la de mayor resolución
+                image_items = (store.get("image", {}) or {}).get("items", [])
+                image = image_items[0]["url"] if image_items else ""
+                # Parsear meta badges: envío, ETA, rating
+                shipping_cost = 0.0
+                eta = ""
+                for meta in (store.get("meta", []) or []):
+                    badge = meta.get("badgeType", "")
+                    if badge == "FARE":
+                        fare_data = (meta.get("badgeData", {}) or {}).get("fare", {})
+                        fee_text = fare_data.get("deliveryFee", "") or meta.get("text", "")
+                        # Extraer número de "Costo de envío: $12"
+                        m = _re.search(r"\$(\d+(?:\.\d+)?)", fee_text)
+                        if m:
+                            shipping_cost = float(m.group(1))
+                    elif badge == "ETD":
+                        eta = meta.get("text", "")
+                rating_obj = store.get("rating", {}) or {}
+                rating = rating_obj.get("text", "") if isinstance(rating_obj, dict) else ""
                 results.append({
                     "store_id": store_uuid,
                     "brand_name": title,
                     "image_url": image,
-                    "eta": "",
-                    "shipping_cost": 0,
-                    "rating": "",
+                    "eta": eta,
+                    "shipping_cost": shipping_cost,
+                    "rating": rating,
                 })
             return results
         except Exception as e:
@@ -818,25 +1014,46 @@ def _do_search(q: str, lat: float, lng: float) -> list[dict]:
         rappi_results = rappi_future.result()
         ue_results = ue_future.result()
 
-    # Cross-match por nombre: encontrar pares Rappi<->UE
-    def _norm(name: str) -> str:
-        return _normalize_name(name)
+    # Enriquecer UberEats con productos del menú (paralelo, con cache por tienda)
+    ue_products_map: dict[str, list[dict]] = {}
+    ue_to_enrich = [ue for ue in ue_results[:10]]
+    if ue_to_enrich:
+        with ThreadPoolExecutor(max_workers=6) as ex:
+            futures = {
+                ex.submit(_fetch_ue_products_for_search, ue["store_id"], q, lat, lng): ue["store_id"]
+                for ue in ue_to_enrich
+            }
+            for f in as_completed(futures):
+                store_id = futures[f]
+                try:
+                    ue_products_map[store_id] = f.result()
+                except Exception:
+                    pass
 
-    merged: list[dict] = []
+    # Cross-match por nombre: encontrar pares Rappi<->UE
+    # Pre-computar nombres normalizados (evita re-normalizar en cada iteración)
+    ue_norms = {ue["store_id"]: _normalize_name(ue["brand_name"]) for ue in ue_results}
+
+    matched_results: list[dict] = []
+    rappi_only: list[dict] = []
+    ue_only: list[dict] = []
     used_ue: set[str] = set()
     used_rappi: set[str] = set()
 
     for rr in rappi_results:
-        rr_norm = _norm(rr["brand_name"])
+        rr_norm = _normalize_name(rr["brand_name"])
         best_ue = None
         best_ratio = 0.0
         for ue in ue_results:
             if ue["store_id"] in used_ue:
                 continue
-            ue_norm = _norm(ue["brand_name"])
-            # Containment check
+            ue_norm = ue_norms[ue["store_id"]]
+            # Containment check rápido antes del SequenceMatcher costoso
             if rr_norm in ue_norm or ue_norm in rr_norm:
                 ratio = 0.95
+            elif abs(len(rr_norm) - len(ue_norm)) > max(len(rr_norm), len(ue_norm)) * 0.5:
+                # Si la diferencia de longitud es > 50%, imposible que matchee a 0.85
+                continue
             else:
                 ratio = difflib.SequenceMatcher(None, rr_norm, ue_norm).ratio()
             if ratio > best_ratio:
@@ -845,22 +1062,38 @@ def _do_search(q: str, lat: float, lng: float) -> list[dict]:
         if best_ratio >= 0.85 and best_ue:
             used_ue.add(best_ue["store_id"])
             used_rappi.add(rr["store_id"])
-            merged.append({
-                "restaurant_name": rr["brand_name"],
+            # Combinar productos de ambas plataformas
+            rappi_prods = rr.get("matching_products", [])
+            ue_prods = ue_products_map.get(best_ue["store_id"], [])
+            # Mezclar: si Rappi tiene productos y UE también, combinar sin duplicados
+            combined_prods = list(rappi_prods)
+            rappi_names = {p["name"].lower() for p in rappi_prods}
+            for up in ue_prods:
+                if up["name"].lower() not in rappi_names:
+                    combined_prods.append(up)
+            # Preferir nombre de UE si Rappi tiene una dirección/zona como nombre
+            rappi_name = _fix_restaurant_name(rr["brand_name"])
+            ue_name = _fix_restaurant_name(best_ue["brand_name"])
+            final_name = ue_name if _is_address_name(rappi_name) else rappi_name
+            matched_results.append({
+                "restaurant_name": final_name,
                 "rappi_store_id": rr["store_id"],
                 "ubereats_store_id": best_ue["store_id"],
                 "image_url": best_ue["image_url"] or rr["image_url"],
-                "delivery_fee_preview": f"${rr['shipping_cost']:.0f}" if rr["shipping_cost"] else "",
-                "eta_preview": rr.get("eta", ""),
+                "delivery_fee_preview": f"${rr['shipping_cost']:.0f}" if rr["shipping_cost"] else (f"${best_ue['shipping_cost']:.0f}" if best_ue.get("shipping_cost") else ""),
+                "eta_preview": rr.get("eta", "") or best_ue.get("eta", ""),
                 "rating": str(rr.get("rating", "") or best_ue.get("rating", "")),
-                "matching_products": rr.get("matching_products", []),
+                "matching_products": combined_prods[:6],
             })
 
-    # Agregar Rappi sin match
+    # Rappi sin match (excluir nombres que son solo dirección/zona)
     for rr in rappi_results:
         if rr["store_id"] not in used_rappi and not _STORE_BLACKLIST.search(rr["brand_name"]):
-            merged.append({
-                "restaurant_name": rr["brand_name"],
+            rappi_name = _fix_restaurant_name(rr["brand_name"])
+            if _is_address_name(rappi_name):
+                continue  # sin match en UE y sin nombre real → no mostrar
+            rappi_only.append({
+                "restaurant_name": rappi_name,
                 "rappi_store_id": rr["store_id"],
                 "ubereats_store_id": None,
                 "image_url": rr["image_url"],
@@ -870,58 +1103,161 @@ def _do_search(q: str, lat: float, lng: float) -> list[dict]:
                 "matching_products": rr.get("matching_products", []),
             })
 
-    # Agregar UE sin match
+    # UE sin match — ahora con productos
     for ue in ue_results:
         if ue["store_id"] not in used_ue and not _STORE_BLACKLIST.search(ue["brand_name"]):
-            merged.append({
-                "restaurant_name": ue["brand_name"],
+            ue_only.append({
+                "restaurant_name": _fix_restaurant_name(ue["brand_name"]),
                 "rappi_store_id": None,
                 "ubereats_store_id": ue["store_id"],
                 "image_url": ue["image_url"],
-                "delivery_fee_preview": "",
+                "delivery_fee_preview": f"${ue['shipping_cost']:.0f}" if ue.get("shipping_cost") else "",
                 "eta_preview": ue.get("eta", ""),
                 "rating": str(ue.get("rating", "")),
-                "matching_products": [],
+                "matching_products": ue_products_map.get(ue["store_id"], []),
             })
 
-    # Auto-guardar en Supabase en background (con cliente propio para el thread)
+    # Intercalar: primero los que tienen ambas plataformas, luego alternar Rappi/UE
+    merged: list[dict] = list(matched_results)
+    ri, ui = 0, 0
+    while ri < len(rappi_only) or ui < len(ue_only):
+        if ri < len(rappi_only):
+            merged.append(rappi_only[ri])
+            ri += 1
+        if ui < len(ue_only):
+            merged.append(ue_only[ui])
+            ui += 1
+
+    # Guardar URLs originales antes de sustituir (para el thread de upload)
+    original_images: dict[str, str] = {}  # store_key -> original_url
+    for r in merged:
+        key = r.get("rappi_store_id") or r.get("ubereats_store_id") or ""
+        original_images[key] = r.get("image_url", "")
+
+    # Sustituir imágenes por URLs de Supabase CDN si ya están en la BD
+    try:
+        from kupi.catalog.restaurants import lookup_by_rappi_ids, lookup_by_ue_ids
+        m_rappi = [r["rappi_store_id"] for r in merged if r.get("rappi_store_id")]
+        m_ue = [r["ubereats_store_id"] for r in merged if r.get("ubereats_store_id")]
+        db_by_rappi = lookup_by_rappi_ids(m_rappi) if m_rappi else {}
+        db_by_ue = lookup_by_ue_ids(m_ue) if m_ue else {}
+        for r in merged:
+            db_row = db_by_rappi.get(r.get("rappi_store_id")) or db_by_ue.get(r.get("ubereats_store_id"))
+            if db_row:
+                db_img = db_row.get("image_url", "")
+                if db_img and "supabase" in db_img:
+                    r["image_url"] = db_img
+    except Exception:
+        pass  # Si falla, seguir con las URLs originales
+
+    # Auto-guardar en Supabase en background (batch optimizado + subir imágenes)
     def _save_to_db():
         try:
             import os
             from supabase import create_client
+            from kupi.catalog.image_store import upload_image
             url = os.environ.get("SUPABASE_URL", "")
             key = os.environ.get("SUPABASE_SECRET_KEY", "")
             if not url or not key:
                 return
             sb = create_client(url, key)
+
+            # 1. Recopilar todos los IDs para buscar en batch (2 queries en vez de N*2)
+            all_rappi_ids = [r["rappi_store_id"] for r in merged if r.get("rappi_store_id")]
+            all_ue_ids = [r["ubereats_store_id"] for r in merged if r.get("ubereats_store_id")]
+            existing_by_rappi: dict[str, dict] = {}
+            existing_by_ue: dict[str, dict] = {}
+            if all_rappi_ids:
+                resp = sb.table("restaurants").select("id,rappi_store_id,ubereats_store_id,image_url").in_("rappi_store_id", all_rappi_ids).execute()
+                existing_by_rappi = {r["rappi_store_id"]: r for r in (resp.data or [])}
+            if all_ue_ids:
+                resp = sb.table("restaurants").select("id,rappi_store_id,ubereats_store_id,image_url").in_("ubereats_store_id", all_ue_ids).execute()
+                existing_by_ue = {r["ubereats_store_id"]: r for r in (resp.data or [])}
+
+            # 2. Identificar qué imágenes necesitan subirse a Supabase Storage
+            from concurrent.futures import ThreadPoolExecutor, as_completed as _as_completed
+            needs_upload: list[tuple[str, str]] = []  # (original_url, restaurant_key)
+            for r in merged:
+                rappi_id = r.get("rappi_store_id")
+                ue_id = r.get("ubereats_store_id")
+                key = rappi_id or ue_id or ""
+                original_img = original_images.get(key, r.get("image_url", ""))
+                if not original_img or "supabase" in original_img:
+                    continue
+                existing = existing_by_rappi.get(rappi_id) if rappi_id else None
+                if not existing and ue_id:
+                    existing = existing_by_ue.get(ue_id)
+                if existing and "supabase" in (existing.get("image_url") or ""):
+                    continue  # Ya tiene imagen en CDN
+                needs_upload.append((original_img, rappi_id or ue_id or ""))
+
+            # Subir en paralelo (máx 3 para no saturar Supabase free tier)
+            uploaded: dict[str, str] = {}  # original_url -> cdn_url
+            if needs_upload:
+                with ThreadPoolExecutor(max_workers=3) as img_ex:
+                    img_futures = {
+                        img_ex.submit(upload_image, orig_url, key): orig_url
+                        for orig_url, key in needs_upload[:20]  # Limitar a 20 por búsqueda
+                    }
+                    for f in _as_completed(img_futures):
+                        orig_url = img_futures[f]
+                        try:
+                            cdn_url = f.result()
+                            if cdn_url:
+                                uploaded[orig_url] = cdn_url
+                        except Exception:
+                            pass
+
+            # 3. Guardar en BD
+            to_insert = []
             for r in merged:
                 name = r["restaurant_name"]
                 rappi_id = r.get("rappi_store_id")
                 ue_id = r.get("ubereats_store_id")
-                # Buscar si ya existe
-                existing = None
-                if rappi_id:
-                    resp = sb.table("restaurants").select("id,rappi_store_id,ubereats_store_id").eq("rappi_store_id", rappi_id).limit(1).execute()
-                    if resp.data:
-                        existing = resp.data[0]
+                key = rappi_id or ue_id or ""
+                orig_img = original_images.get(key, r.get("image_url", ""))
+                cdn_img = uploaded.get(orig_img)  # None si no se subió
+
+                existing = existing_by_rappi.get(rappi_id) if rappi_id else None
                 if not existing and ue_id:
-                    resp = sb.table("restaurants").select("id,rappi_store_id,ubereats_store_id").eq("ubereats_store_id", ue_id).limit(1).execute()
-                    if resp.data:
-                        existing = resp.data[0]
-                row = {"name": name, "image_url": r.get("image_url", ""), "city": "culiacan", "match_confidence": "auto"}
+                    existing = existing_by_ue.get(ue_id)
+
+                # Decidir qué imagen guardar:
+                # 1. Si se acaba de subir al CDN, usar esa
+                # 2. Si ya tiene CDN en la BD, NO pisar con la URL original
+                # 3. Si no tiene CDN, guardar la original
+                if cdn_img:
+                    final_img = cdn_img
+                elif existing and "supabase" in (existing.get("image_url") or ""):
+                    final_img = existing["image_url"]  # Preservar CDN existente
+                else:
+                    final_img = orig_img
+
+                row = {"name": name, "image_url": final_img, "match_confidence": "auto"}
                 if rappi_id:
                     row["rappi_store_id"] = rappi_id
                 if ue_id:
                     row["ubereats_store_id"] = ue_id
                 if existing:
-                    update = {k: v for k, v in row.items() if v}
+                    needs_update = False
+                    update = {}
+                    if cdn_img:  # Nueva imagen CDN
+                        update["image_url"] = cdn_img
+                        needs_update = True
                     if rappi_id and not existing.get("rappi_store_id"):
                         update["rappi_store_id"] = rappi_id
+                        needs_update = True
                     if ue_id and not existing.get("ubereats_store_id"):
                         update["ubereats_store_id"] = ue_id
-                    sb.table("restaurants").update(update).eq("id", existing["id"]).execute()
+                        needs_update = True
+                    if needs_update:
+                        sb.table("restaurants").update(update).eq("id", existing["id"]).execute()
                 else:
-                    sb.table("restaurants").insert(row).execute()
+                    to_insert.append(row)
+
+            # 4. Insertar nuevos en batch
+            if to_insert:
+                sb.table("restaurants").insert(to_insert).execute()
         except Exception as e:
             print(f"[auto-save] error: {e}")
 
@@ -944,8 +1280,10 @@ def get_popular_restaurants(
     from concurrent.futures import ThreadPoolExecutor, as_completed
     from kupi.connectors.ubereats.connector import _call_ubereats, _build_headers, _BASE_URL
 
+    # Cache por ubicación (redondeada a 1 decimal ~11km) para no servir Culiacán a alguien en Veracruz
+    cache_key = f"popular_{round(lat,1)}_{round(lng,1)}"
     with _cache_lock:
-        cached = _popular_cache_store.get("popular")
+        cached = _popular_cache_store.get(cache_key)
     if cached is not None:
         return cached
 
@@ -1000,7 +1338,7 @@ def get_popular_restaurants(
                 pass
 
         return {
-            "restaurant_name": r.get("name", ""),
+            "restaurant_name": _fix_restaurant_name(r.get("name", "")),
             "rappi_store_id": r.get("rappi_store_id"),
             "ubereats_store_id": r.get("ubereats_store_id"),
             "image_url": r.get("image_url", ""),
@@ -1020,7 +1358,7 @@ def get_popular_restaurants(
     # Abiertos primero, luego cerrados
     results.sort(key=lambda r: (0 if r["is_open"] else 1, r["restaurant_name"]))
     with _cache_lock:
-        _popular_cache_store["popular"] = results
+        _popular_cache_store[cache_key] = results
     return results
 
 

@@ -9,9 +9,11 @@ export default function ThemeToggle() {
   // Leer tema guardado al montar
   useEffect(() => {
     const saved = localStorage.getItem("kupi-theme");
-    if (saved === "noche") {
+    if (saved === null || saved === "noche") {
       setIsNoche(true);
       document.documentElement.setAttribute("data-theme", "noche");
+    } else {
+      setIsNoche(false);
     }
   }, []);
 

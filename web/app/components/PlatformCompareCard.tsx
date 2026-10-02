@@ -13,6 +13,7 @@ interface Props {
   storeAddress?: string;
   isCheapest: boolean;
   approximate?: boolean;
+  isEstimate?: boolean;
   cardIndex?: number;
   variantLabel?: string;
   isOpen?: boolean;
@@ -47,6 +48,7 @@ export default function PlatformCompareCard({
   variantLabel,
   isOpen = true,
   opensAt,
+  isEstimate,
   onSelect,
 }: Props) {
   const { t } = useLang();
@@ -147,6 +149,12 @@ export default function PlatformCompareCard({
         </div>
       </div>
 
+
+      {isEstimate && (
+        <p className="text-[11px] text-amber-500 leading-snug -mt-1 font-medium">
+          Precio estimado. El envío y tarifa de servicio pueden variar.
+        </p>
+      )}
 
       {platform === "didi" && (
         <p className="text-[11px] text-[var(--text-muted)] leading-snug -mt-1">

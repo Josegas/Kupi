@@ -29,7 +29,7 @@ def upsert_restaurant(
     ubereats_store_id: str | None = None,
     cuisine: str = "",
     image_url: str = "",
-    city: str = "culiacan",
+    city: str = "",
     match_confidence: str = "auto",
 ) -> None:
     """Inserta o actualiza un restaurante en la BD."""
@@ -70,10 +70,13 @@ def upsert_restaurant(
         sb.table("restaurants").insert(row).execute()
 
 
-def get_all(city: str = "culiacan") -> list[dict]:
-    """Retorna todos los restaurantes de una ciudad."""
+def get_all(city: str | None = None) -> list[dict]:
+    """Retorna todos los restaurantes, opcionalmente filtrados por ciudad."""
     sb = get_client()
-    resp = sb.table("restaurants").select("*").eq("city", city).execute()
+    query = sb.table("restaurants").select("*")
+    if city:
+        query = query.eq("city", city)
+    resp = query.execute()
     return resp.data or []
 
 

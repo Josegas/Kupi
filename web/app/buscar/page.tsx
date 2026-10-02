@@ -3,16 +3,11 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import TopNav from "../components/TopNav";
 import CategoryChips from "../components/CategoryChips";
 import RestaurantCard from "../components/RestaurantCard";
-import { RESTAURANTS } from "../lib/restaurants";
 import { fetchStoresStatus, searchRestaurants, fetchPopularRestaurants, proxyImage, SearchResult, PopularRestaurant } from "../lib/api";
 import { useLocation } from "../lib/location";
 import { useLang } from "../lib/i18n";
 
 function buildHref(r: { rappi_store_id: string | null; ubereats_store_id: string | null; restaurant_name: string }): string {
-  const hardcoded = RESTAURANTS.find(
-    hr => hr.rappi_store_id === r.rappi_store_id || hr.ubereats_store_id === r.ubereats_store_id
-  );
-  if (hardcoded) return `/compare/${hardcoded.id}`;
   const params = new URLSearchParams();
   if (r.rappi_store_id) params.set("rappi", r.rappi_store_id);
   if (r.ubereats_store_id) params.set("ue", r.ubereats_store_id);
@@ -25,7 +20,7 @@ export default function Buscar() {
   const [category, setCategory] = useState("Todo");
   const [platformFilter, setPlatformFilter] = useState<"all" | "rappi" | "ubereats" | "both">("all");
   const { t } = useLang();
-  const { location } = useLocation();
+  const { location, hasLocation } = useLocation();
   const lastSearchedRef = useRef("");
 
   // Search results from API
@@ -35,6 +30,7 @@ export default function Buscar() {
   // Popular restaurants from DB
   const [popular, setPopular] = useState<PopularRestaurant[]>([]);
   const [loadingPopular, setLoadingPopular] = useState(true);
+
 
   // Restore search state from sessionStorage on mount (back navigation)
   useEffect(() => {
@@ -49,14 +45,32 @@ export default function Buscar() {
     }
   }, []);
 
-  // Load popular restaurants on mount
+  // Clave estable de ubicación para dependencias de efectos
+  const locationKey = `${location.lat}_${location.lng}`;
+  const prevLocationRef = useRef(locationKey);
+
+  // Limpiar resultados previos solo cuando la ubicación CAMBIA (no en mount)
+  useEffect(() => {
+    if (prevLocationRef.current === locationKey) return;
+    prevLocationRef.current = locationKey;
+    sessionStorage.removeItem("kupi-search-q");
+    sessionStorage.removeItem("kupi-search-results");
+    setSearchResults([]);
+    setSearch("");
+    setCategory("Todo");
+    lastSearchedRef.current = "";
+  }, [locationKey]);
+
+  // Load popular restaurants on mount and when location changes
   useEffect(() => {
     setLoadingPopular(true);
+    setPopular([]);
     fetchPopularRestaurants(location.lat, location.lng)
       .then(setPopular)
       .catch(() => {})
       .finally(() => setLoadingPopular(false));
-  }, [location]);
+  }, [locationKey]);
+
 
   // Debounced search
   useEffect(() => {
@@ -88,7 +102,7 @@ export default function Buscar() {
         .finally(() => setSearching(false));
     }, 400);
     return () => clearTimeout(timer);
-  }, [search, location]);
+  }, [search, locationKey]);
 
   // Category click → trigger search
   const handleCategory = (cat: string) => {
@@ -145,6 +159,16 @@ export default function Buscar() {
             {t.buscar.subtitle}
           </p>
         </div>
+
+        {/* Banner: elige tu ubicación */}
+        {!hasLocation && (
+          <div className="mb-6 p-4 rounded-2xl border border-[var(--brand)] bg-[var(--brand-tint)] flex items-center gap-3">
+            <span className="text-[20px]">📍</span>
+            <p className="text-[14px] text-[var(--text-primary)]">
+              <span className="font-semibold">Elige tu ubicación</span> en la barra de arriba para ver restaurantes cerca de ti
+            </p>
+          </div>
+        )}
 
         {/* Platform filters */}
         <div className="flex gap-2 flex-wrap mb-4">
@@ -334,6 +358,10 @@ export default function Buscar() {
                     />
                   ))}
                 </div>
+                <p className="text-center text-[13px] text-[var(--text-muted)] mt-4 flex items-center justify-center gap-2">
+                  <span className="w-4 h-4 border-2 border-[var(--brand)] border-t-transparent rounded-full animate-spin" />
+                  Cargando restaurantes...
+                </p>
               </div>
             )}
           </>

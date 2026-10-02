@@ -2,6 +2,8 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 export function proxyImage(url: string): string {
   if (!url) return "";
+  // URLs de Supabase Storage son públicas — servir directamente sin proxy
+  if (url.includes("supabase.co/storage/")) return url;
   return `${API_URL}/proxy/image?url=${encodeURIComponent(url)}`;
 }
 
@@ -19,6 +21,7 @@ export interface QuoteResponse {
   variant_label: string;
   is_open: boolean;
   opens_at: string;
+  is_estimate: boolean;
 }
 
 export interface CompareRequest {
@@ -78,6 +81,8 @@ export interface FeaturedProduct {
   category: string;
   rappi_product_id: string;
   ubereats_product_id: string;
+  rappi_store_id: string;
+  ubereats_store_id: string;
 }
 
 export interface DealProduct {
@@ -94,8 +99,9 @@ export interface DealProduct {
   quotes: Array<{ platform: string; total: number; delivery_fee: number | null }>;
 }
 
-export async function fetchFeaturedProducts(maxPrice = 100): Promise<FeaturedProduct[]> {
-  const res = await fetch(`${API_URL}/products/featured?max_price=${maxPrice}`);
+export async function fetchFeaturedProducts(lat: number, lng: number, maxPrice = 200): Promise<FeaturedProduct[]> {
+  const params = new URLSearchParams({ max_price: String(maxPrice), lat: String(lat), lng: String(lng) });
+  const res = await fetch(`${API_URL}/products/featured?${params}`);
   if (!res.ok) return [];
   return res.json();
 }

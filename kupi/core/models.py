@@ -32,3 +32,4 @@ class PriceQuote:
     variant_label: str = ""  # etiqueta de la variante cotizada, ej. "6 Piezas" o "Precio base"
     is_open: bool = True  # False si el restaurante está cerrado ahora (fuera de horario)
     opens_at: str = ""    # mensaje de apertura si está cerrado, ej. "Abre: 10:00 a.m."
+    is_estimate: bool = False  # True si el checkout falló y el total es estimado (sin service fee real)

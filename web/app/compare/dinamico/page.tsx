@@ -1,7 +1,7 @@
 "use client";
 import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import CompareClient from "../[id]/CompareClient";
+import CompareClient from "../CompareClient";
 import { RestaurantConfig } from "../../lib/restaurants";
 
 function DinamicoInner() {

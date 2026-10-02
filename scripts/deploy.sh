@@ -182,6 +182,7 @@ selected = {
     "UBEREATS_WORKER_SECRET": env_vars.get("UBEREATS_WORKER_SECRET", ""),
     "SUPABASE_URL": env_vars.get("SUPABASE_URL", ""),
     "SUPABASE_SECRET_KEY": env_vars.get("SUPABASE_SECRET_KEY", ""),
+    "CORS_ORIGINS": env_vars.get("CORS_ORIGINS", "*"),
 }
 
 total = sum(len(k) + len(v) for k, v in selected.items())
@@ -238,7 +239,7 @@ else
     aws lambda create-function-url-config \
         --function-name $FUNCTION_NAME \
         --auth-type NONE \
-        --cors '{"AllowOrigins":["*"],"AllowMethods":["GET","POST"],"AllowHeaders":["*"]}' \
+        --cors '{"AllowOrigins":["*"],"AllowMethods":["GET","POST","PATCH","DELETE","OPTIONS"],"AllowHeaders":["*"]}' \
         --region $REGION > /dev/null
 
     aws lambda add-permission \

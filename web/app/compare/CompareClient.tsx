@@ -3,17 +3,17 @@ import { useState, useEffect, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import { ArrowLeft, RefreshCw, MapPin, Search, Heart, Bell, LogOut } from "lucide-react";
 import Link from "next/link";
-import PlatformCompareCard from "../../components/PlatformCompareCard";
-import CTAButton from "../../components/CTAButton";
-import { compareProducts, fetchCombinedMenu, proxyImage, QuoteResponse, CombinedProduct, ExclusiveProduct } from "../../lib/api";
-import { RestaurantConfig } from "../../lib/restaurants";
-import { useLocation } from "../../lib/location";
-import { useLang } from "../../lib/i18n";
-import KupiLogo from "../../components/KupiLogo";
-import FavoriteButton from "../../components/FavoriteButton";
-import ThemeToggle from "../../components/ThemeToggle";
-import LanguageToggle from "../../components/LanguageToggle";
-import { useAuth } from "../../lib/auth";
+import PlatformCompareCard from "../components/PlatformCompareCard";
+import CTAButton from "../components/CTAButton";
+import { compareProducts, fetchCombinedMenu, proxyImage, QuoteResponse, CombinedProduct, ExclusiveProduct } from "../lib/api";
+import { RestaurantConfig } from "../lib/restaurants";
+import { useLocation } from "../lib/location";
+import { useLang } from "../lib/i18n";
+import KupiLogo from "../components/KupiLogo";
+import FavoriteButton from "../components/FavoriteButton";
+import ThemeToggle from "../components/ThemeToggle";
+import LanguageToggle from "../components/LanguageToggle";
+import { useAuth } from "../lib/auth";
 
 const _COMPLEMENT_RE = new RegExp(
   [
@@ -307,7 +307,7 @@ export default function CompareClient({ restaurant }: Props) {
         ) : (
           <Link
             href="/login"
-            className="shrink-0 text-[13px] font-semibold text-[var(--brand)] hover:underline"
+            className="shrink-0 text-[13px] font-semibold text-white bg-[var(--brand)] px-4 py-1.5 rounded-full hover:brightness-110 transition-all"
           >
             Iniciar sesion
           </Link>
@@ -643,6 +643,7 @@ export default function CompareClient({ restaurant }: Props) {
                     variantLabel={q.variant_label || undefined}
                     isOpen={q.is_open}
                     opensAt={q.opens_at || undefined}
+                    isEstimate={q.is_estimate}
                     onSelect={() => setSelectedQuote(q)}
                   />
                 ))}

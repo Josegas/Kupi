@@ -15,7 +15,7 @@ interface TopNavProps {
 }
 
 export default function TopNav({ search, onSearch }: TopNavProps = {}) {
-  const { location, setLocation } = useLocation();
+  const { location, setLocation, hasLocation } = useLocation();
   const { t } = useLang();
   const { user, signOut } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -120,7 +120,7 @@ export default function TopNav({ search, onSearch }: TopNavProps = {}) {
               <div className="absolute top-full left-0 mt-1 w-full min-w-[320px] bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-lg px-4 py-3 z-50">
                 <p className="text-[12px] text-[var(--text-muted)] leading-relaxed">
                   {t.nav.locationHint} <span className="text-[var(--text-secondary)] font-medium">{t.nav.locationHintBold}</span>.<br />
-                  {t.nav.locationExamples} <span className="text-[var(--text-secondary)]">Humaya</span>, <span className="text-[var(--text-secondary)]">Tres Ríos</span>, <span className="text-[var(--text-secondary)]">Plaza Forum</span>, <span className="text-[var(--text-secondary)]">Blvd. Enrique Félix Castro</span>
+                  {t.nav.locationExamples} <span className="text-[var(--text-secondary)]">Polanco</span>, <span className="text-[var(--text-secondary)]">Zona Rio Tijuana</span>, <span className="text-[var(--text-secondary)]">Plaza Galerias</span>, <span className="text-[var(--text-secondary)]">Centro Historico</span>
                 </p>
               </div>
             )}
@@ -161,11 +161,11 @@ export default function TopNav({ search, onSearch }: TopNavProps = {}) {
         ) : (
           <button
             onClick={openEdit}
-            className="kupi-link flex items-center gap-1.5 text-sm font-medium text-[var(--text-primary)] shrink-0 max-w-[200px]"
+            className={`kupi-link flex items-center gap-1.5 text-sm font-medium shrink-0 max-w-[200px] ${!hasLocation ? "text-[var(--brand)] animate-pulse" : "text-[var(--text-primary)]"}`}
             title="Cambiar dirección de entrega"
           >
             <MapPin size={15} className="text-[var(--brand)] shrink-0" />
-            <span className="truncate">{location.label}</span>
+            <span className="truncate">{hasLocation ? location.label : "Elige tu ubicación"}</span>
           </button>
         )}
 
@@ -220,7 +220,7 @@ export default function TopNav({ search, onSearch }: TopNavProps = {}) {
         ) : (
           <Link
             href="/login"
-            className="shrink-0 text-[13px] font-semibold text-[var(--brand)] hover:underline"
+            className="shrink-0 text-[13px] font-semibold text-white bg-[var(--brand)] px-4 py-1.5 rounded-full hover:brightness-110 transition-all"
           >
             Iniciar sesion
           </Link>

@@ -1,8 +1,18 @@
 """
 Punto de entrada para AWS Lambda.
-Solo envuelve la app de FastAPI con Mangum - toda la lógica vive en kupi/api/main.py.
+Envuelve la app de FastAPI con Mangum para requests HTTP.
+Si el evento es un job programado (EventBridge), lo rutea directamente.
 """
 from mangum import Mangum
 from kupi.api.main import app
 
-handler = Mangum(app, lifespan="off")
+_mangum_handler = Mangum(app, lifespan="off")
+
+
+def handler(event, context):
+    # EventBridge / invocación directa con payload de job
+    if isinstance(event, dict) and event.get("job") == "sample_prices":
+        from kupi.jobs.price_sampler import run
+        return run()
+    # Request HTTP normal (API Gateway / Function URL)
+    return _mangum_handler(event, context)

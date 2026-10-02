@@ -117,7 +117,8 @@ class RappiConnector(BaseConnector):
             )
         except Exception as e:
             # Si falla (ej. producto con personalización obligatoria), caer al precio del menú
-            print(f"[Rappi] checkout falló ({e}), usando precio de menú")
+            # ADVERTENCIA: el fallback NO tiene service_fee ni envío real — el total será inexacto
+            print(f"[Rappi] checkout falló ({e}), usando precio de menú — TOTAL SERÁ INEXACTO")
 
         return PriceQuote(
             platform="rappi",
@@ -131,6 +132,7 @@ class RappiConnector(BaseConnector):
             store_address=store_address,
             variant_label="Precio base" if product.has_variants else "",
             is_open=is_open,
+            is_estimate=True,
         )
 
     def _fetch_checkout(
@@ -200,7 +202,24 @@ class RappiConnector(BaseConnector):
             )
         r1.raise_for_status()
 
-        # Paso 2 - recalcular (change-address no es necesario para cotización)
+        # Paso 2a - cambiar dirección de entrega a la del usuario
+        addr_body = {
+            "lat": lat,
+            "lng": lng,
+            "description": "",
+        }
+        try:
+            ra = requests.post(
+                f"{_CART_BASE}/v1/restaurant/change-address",
+                headers=_HEADERS,
+                json=addr_body,
+                timeout=10,
+            )
+            ra.raise_for_status()
+        except Exception as e:
+            print(f"[Rappi] change-address falló ({e}), continuando con recalculate")
+
+        # Paso 2b - recalcular con la nueva dirección
         r2 = requests.post(
             f"{_CART_BASE}/v1/restaurant/recalculate",
             headers=_HEADERS,

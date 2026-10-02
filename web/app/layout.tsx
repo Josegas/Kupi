@@ -32,7 +32,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         {/* Aplica el tema guardado ANTES de pintar para evitar flash de blanco */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem('kupi-theme');if(t==='noche')document.documentElement.setAttribute('data-theme','noche');}catch(e){}})();`,
+            __html: `(function(){try{var t=localStorage.getItem('kupi-theme');if(t===null||t==='noche')document.documentElement.setAttribute('data-theme','noche');}catch(e){}})();`,
           }}
         />
       </head>
