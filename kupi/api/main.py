@@ -111,13 +111,14 @@ _ADDRESS_PATTERN = _re.compile(
 )
 # Nombres que son solo una zona/colonia de Culiacán (Rappi los usa como nombre de sucursal)
 _ZONE_NAMES = {
-    "humaya", "las quintas", "montebello", "tres rios", "tres ríos",
+    "humaya", "quintas", "las quintas", "montebello", "tres rios", "tres ríos",
     "culiacan", "culiacán", "nuevo culiacán", "nuevo culiacan",
     "universitarios", "chapultepec", "guadalupe", "la primavera",
     "el barrio", "centro", "isla musala", "stanza", "country",
     "las palmas", "san cristobal", "san cristóbal", "perisur",
     "fracc portalegre", "portalegre", "la campiña", "la conquista",
     "lomas del boulevard", "infonavit barrancos", "barrancos",
+    "col libertad", "libertad", "sanalona", "alturas del sur",
 }
 
 
@@ -133,6 +134,39 @@ def _is_address_name(name: str) -> bool:
     if s.lower().strip() in _ZONE_NAMES:
         return True
     return False
+
+# ══════════════════════════════════════════════════════════════════════
+# Test: enviar email de prueba via Resend
+# ══════════════════════════════════════════════════════════════════════
+
+@app.post("/test/email")
+def test_email(to: str = Query(..., description="Email destino")):
+    """Envía un email de prueba via Resend para verificar la integración."""
+    resend_key = os.environ.get("RESEND_API_KEY")
+    if not resend_key:
+        raise HTTPException(status_code=500, detail="RESEND_API_KEY no configurado")
+    resp = _requests.post(
+        "https://api.resend.com/emails",
+        headers={"Authorization": f"Bearer {resend_key}", "Content-Type": "application/json"},
+        json={
+            "from": "Kupi <onboarding@resend.dev>",
+            "to": [to],
+            "subject": "Prueba de alerta - Kupi",
+            "html": (
+                "<h2>Alerta de precio - Kupi</h2>"
+                "<p>El precio de <b>Crazy Bread</b> en <b>Little Caesars</b> "
+                "bajo de $385 a $350 en Rappi (9% menos)</p>"
+                "<p><a href='https://main.d2edvoaz20no1j.amplifyapp.com/favoritos'>"
+                "Ver en Kupi</a></p>"
+                "<p><small>Este es un email de prueba.</small></p>"
+            ),
+        },
+        timeout=10,
+    )
+    if resp.status_code == 200:
+        return {"status": "ok", "message": f"Email enviado a {to}"}
+    raise HTTPException(status_code=resp.status_code, detail=resp.json())
+
 
 # ══════════════════════════════════════════════════════════════════════
 # Capa 1: Cache de resultados — misma búsqueda = 0 requests externos
@@ -1041,6 +1075,11 @@ def _do_search(q: str, lat: float, lng: float) -> list[dict]:
     used_rappi: set[str] = set()
 
     for rr in rappi_results:
+        rappi_fixed = _fix_restaurant_name(rr["brand_name"])
+        # Si el nombre de Rappi es una zona/dirección, no intentar cross-match
+        # (evita juntar "Humaya" de Rappi con "Humaya Restaurante" de UE que son negocios distintos)
+        if _is_address_name(rappi_fixed):
+            continue
         rr_norm = _normalize_name(rr["brand_name"])
         best_ue = None
         best_ratio = 0.0
@@ -1086,12 +1125,15 @@ def _do_search(q: str, lat: float, lng: float) -> list[dict]:
                 "matching_products": combined_prods[:6],
             })
 
-    # Rappi sin match (excluir nombres que son solo dirección/zona)
+    # Rappi sin match (excluir nombres que son solo dirección/zona o sin productos)
     for rr in rappi_results:
         if rr["store_id"] not in used_rappi and not _STORE_BLACKLIST.search(rr["brand_name"]):
             rappi_name = _fix_restaurant_name(rr["brand_name"])
             if _is_address_name(rappi_name):
-                continue  # sin match en UE y sin nombre real → no mostrar
+                continue
+            rappi_prods = rr.get("matching_products", [])
+            if not rappi_prods:
+                continue  # sin productos relevantes → no mostrar
             rappi_only.append({
                 "restaurant_name": rappi_name,
                 "rappi_store_id": rr["store_id"],
@@ -1100,21 +1142,27 @@ def _do_search(q: str, lat: float, lng: float) -> list[dict]:
                 "delivery_fee_preview": f"${rr['shipping_cost']:.0f}" if rr["shipping_cost"] else "",
                 "eta_preview": rr.get("eta", ""),
                 "rating": str(rr.get("rating", "")),
-                "matching_products": rr.get("matching_products", []),
+                "matching_products": rappi_prods,
             })
 
-    # UE sin match — ahora con productos
+    # UE sin match — solo si tiene productos relevantes (evita ruido de restaurantes irrelevantes)
     for ue in ue_results:
         if ue["store_id"] not in used_ue and not _STORE_BLACKLIST.search(ue["brand_name"]):
+            ue_prods = ue_products_map.get(ue["store_id"], [])
+            if not ue_prods:
+                continue  # sin productos relevantes → no mostrar
+            ue_name = _fix_restaurant_name(ue["brand_name"])
+            if _is_address_name(ue_name):
+                continue
             ue_only.append({
-                "restaurant_name": _fix_restaurant_name(ue["brand_name"]),
+                "restaurant_name": ue_name,
                 "rappi_store_id": None,
                 "ubereats_store_id": ue["store_id"],
                 "image_url": ue["image_url"],
                 "delivery_fee_preview": f"${ue['shipping_cost']:.0f}" if ue.get("shipping_cost") else "",
                 "eta_preview": ue.get("eta", ""),
                 "rating": str(ue.get("rating", "")),
-                "matching_products": ue_products_map.get(ue["store_id"], []),
+                "matching_products": ue_prods,
             })
 
     # Intercalar: primero los que tienen ambas plataformas, luego alternar Rappi/UE

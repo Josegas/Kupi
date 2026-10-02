@@ -3,6 +3,7 @@ Job de muestreo de precios: captura el precio total real de los productos
 que los usuarios tienen en favoritos. Se ejecuta cada 6 horas vía EventBridge.
 """
 import os
+import requests as http_requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 
@@ -203,6 +204,9 @@ def _evaluate_alerts(sb, new_snapshots: list[dict]) -> int:
             "channel": "email",
         }).execute()
 
+        # Enviar email via Resend
+        _send_alert_email(sb, alert["user_id"], fav.get("product_name", ""), message)
+
         # Actualizar last_notified_at
         sb.table("price_alerts").update({"last_notified_at": now.isoformat()}).eq("id", alert["id"]).execute()
 
@@ -210,3 +214,46 @@ def _evaluate_alerts(sb, new_snapshots: list[dict]) -> int:
         print(f"[alert] {message}")
 
     return sent_count
+
+
+def _send_alert_email(sb, user_id: str, product_name: str, message: str):
+    """Envía email de alerta via Resend (free tier: 100 emails/día)."""
+    resend_key = os.environ.get("RESEND_API_KEY")
+    if not resend_key:
+        print("[alert] RESEND_API_KEY no configurado, email no enviado")
+        return
+
+    # Obtener email del usuario desde Supabase Auth
+    try:
+        user = sb.auth.admin.get_user_by_id(user_id)
+        email = user.user.email
+        if not email:
+            print(f"[alert] usuario {user_id} sin email")
+            return
+    except Exception as e:
+        print(f"[alert] error obteniendo email de {user_id}: {e}")
+        return
+
+    try:
+        resp = http_requests.post(
+            "https://api.resend.com/emails",
+            headers={"Authorization": f"Bearer {resend_key}", "Content-Type": "application/json"},
+            json={
+                "from": "Kupi <onboarding@resend.dev>",
+                "to": [email],
+                "subject": f"Bajo el precio de {product_name}",
+                "html": (
+                    f"<h2>Alerta de precio - Kupi</h2>"
+                    f"<p>{message}</p>"
+                    f"<p><a href='https://main.d2edvoaz20no1j.amplifyapp.com/favoritos'>"
+                    f"Ver en Kupi</a></p>"
+                ),
+            },
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            print(f"[alert] email enviado a {email}")
+        else:
+            print(f"[alert] error enviando email: {resp.status_code} {resp.text}")
+    except Exception as e:
+        print(f"[alert] error enviando email: {e}")

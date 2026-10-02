@@ -2,8 +2,13 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 export function proxyImage(url: string): string {
   if (!url) return "";
-  // URLs de Supabase Storage son públicas — servir directamente sin proxy
+  // CDNs públicos — servir directo sin proxy (mucho más rápido)
   if (url.includes("supabase.co/storage/")) return url;
+  if (url.includes("images.rappi.com")) return url;
+  if (url.includes("tb-static.uber.com")) return url;
+  if (url.includes("uber.com/prod/image")) return url;
+  if (url.includes("cloudfront.net")) return url;
+  // Solo proxear URLs desconocidas que podrían tener restricciones
   return `${API_URL}/proxy/image?url=${encodeURIComponent(url)}`;
 }
 

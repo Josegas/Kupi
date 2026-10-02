@@ -1,5 +1,8 @@
+import logging
 import time
 import requests
+
+logger = logging.getLogger(__name__)
 from kupi.connectors.base import BaseConnector
 from kupi.core.config import RAPPI_TOKEN, RAPPI_DEVICE_ID, RAPPI_AUTH_USER
 from kupi.core.models import Product, PriceQuote
@@ -258,10 +261,12 @@ def _parse_summary(
       type="shipping"      → costo de envío real (0 si hay promo de envío gratis)
       type="service_fee"   → tarifa de servicio
       type="tip"           → propina (se excluye - es opcional del usuario)
+    Cualquier otro tipo de fee (ej. tarifa de entrega extendida) se suma a delivery_fee.
     """
     product_price = product.price
     delivery_fee = 0.0
     service_fee = 0.0
+    extra_fees = 0.0
 
     for section in summary.get("summary", []):
         for sub in (section.get("sub_value") or []):
@@ -273,8 +278,13 @@ def _parse_summary(
                 delivery_fee = val
             elif t == "service_fee":
                 service_fee = val
-            # tip se ignora - es opcional del usuario, no parte del precio de la plataforma
+            elif t == "tip" or t is None:
+                pass
+            else:
+                logger.info("rappi summary sub_value tipo desconocido: %s = %s", t, val)
+                extra_fees += val
 
+    delivery_fee += extra_fees
     total = product_price + delivery_fee + service_fee
 
     return PriceQuote(

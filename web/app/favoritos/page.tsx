@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
-import { ArrowLeft, Heart, Trash2, Bell, BellOff, TrendingDown, TrendingUp, Minus } from "lucide-react";
+import { ArrowLeft, Heart, Trash2, Bell, BellOff, TrendingDown, TrendingUp, ChevronDown, ChevronUp, ExternalLink } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import KupiLogo from "../components/KupiLogo";
@@ -36,6 +36,46 @@ interface Alert {
   alert_type: string;
   threshold_pct: number;
   is_active: boolean;
+}
+
+function buildCompareHref(fav: Favorite): string {
+  const params = new URLSearchParams();
+  if (fav.rappi_store_id) params.set("rappi", fav.rappi_store_id);
+  if (fav.ubereats_store_id) params.set("ue", fav.ubereats_store_id);
+  params.set("name", fav.restaurant_name);
+  // Pasar IDs del producto para ir directo a la comparación
+  if (fav.rappi_product_id) params.set("r", fav.rappi_product_id);
+  if (fav.ubereats_product_id) params.set("u", fav.ubereats_product_id);
+  params.set("from", "fav");
+  return `/compare/dinamico?${params.toString()}`;
+}
+
+/** Agrupa snapshots por fecha de muestreo (redondeando a la hora más cercana) */
+function groupByTime(snapshots: PriceSnapshot[]): { time: string; rappi: PriceSnapshot | null; ubereats: PriceSnapshot | null }[] {
+  const groups: Record<string, { rappi: PriceSnapshot | null; ubereats: PriceSnapshot | null }> = {};
+
+  for (const s of snapshots) {
+    // Redondear al bloque de hora (agrupa snapshots del mismo muestreo)
+    const d = new Date(s.sampled_at);
+    const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}-${d.getHours()}`;
+    if (!groups[key]) groups[key] = { rappi: null, ubereats: null };
+    if (s.platform === "rappi") groups[key].rappi = s;
+    else groups[key].ubereats = s;
+  }
+
+  return Object.entries(groups)
+    .map(([, g]) => ({
+      time: (g.rappi || g.ubereats)!.sampled_at,
+      rappi: g.rappi,
+      ubereats: g.ubereats,
+    }))
+    .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime()); // más reciente primero
+}
+
+function formatDate(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleDateString("es-MX", { day: "numeric", month: "short" }) +
+    ", " + d.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" });
 }
 
 export default function FavoritosPage() {
@@ -92,7 +132,6 @@ export default function FavoritosPage() {
   const toggleAlert = async (favId: number) => {
     const existing = alerts.find((a) => a.favorite_id === favId);
     if (existing) {
-      // Toggle active/inactive
       const resp = await fetch(`${API_URL}/alerts/${existing.id}`, {
         method: "PATCH",
         headers: headers(),
@@ -103,7 +142,6 @@ export default function FavoritosPage() {
         setAlerts((prev) => prev.map((a) => (a.id === existing.id ? updated : a)));
       }
     } else {
-      // Crear nueva alerta
       const resp = await fetch(`${API_URL}/alerts`, {
         method: "POST",
         headers: headers(),
@@ -181,22 +219,27 @@ export default function FavoritosPage() {
             {favorites.map((fav) => {
               const alert = alerts.find((a) => a.favorite_id === fav.id);
               const isExpanded = selectedFav === fav.id;
+              const compareHref = buildCompareHref(fav);
+              const grouped = isExpanded ? groupByTime(history) : [];
+
               return (
                 <div key={fav.id} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
                   {/* Card principal */}
                   <div className="flex items-center gap-4 p-4">
-                    {/* Imagen */}
-                    <div className="w-16 h-16 rounded-lg bg-[var(--bg)] overflow-hidden shrink-0">
+                    {/* Imagen + link al producto */}
+                    <a href={compareHref} className="w-16 h-16 rounded-lg bg-[var(--bg)] overflow-hidden shrink-0 block">
                       {fav.image_url ? (
                         <img src={proxyImage(fav.image_url)} alt={fav.product_name} className="w-full h-full object-cover" />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center text-[var(--text-muted)] text-[10px]">Sin img</div>
                       )}
-                    </div>
+                    </a>
 
-                    {/* Info */}
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[14px] font-semibold text-[var(--text-primary)] truncate">{fav.product_name}</p>
+                    {/* Info + link al producto */}
+                    <a href={compareHref} className="flex-1 min-w-0 group">
+                      <p className="text-[14px] font-semibold text-[var(--text-primary)] truncate group-hover:text-[var(--brand)] transition-colors">
+                        {fav.product_name}
+                      </p>
                       <p className="text-[12px] text-[var(--text-muted)] truncate">{fav.restaurant_name}</p>
                       <div className="flex items-center gap-1.5 mt-1">
                         {fav.rappi_store_id && (
@@ -205,24 +248,30 @@ export default function FavoritosPage() {
                         {fav.ubereats_store_id && (
                           <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "#06C16722", color: "#06C167" }}>Uber Eats</span>
                         )}
+                        <span className="text-[10px] text-[var(--brand)] flex items-center gap-0.5 ml-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          Comparar <ExternalLink size={10} />
+                        </span>
                       </div>
-                    </div>
+                    </a>
 
                     {/* Acciones */}
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex items-center gap-1 shrink-0">
                       <button
                         onClick={() => loadHistory(fav.id)}
                         className={`p-2 rounded-lg transition-colors ${isExpanded ? "bg-[var(--brand)] text-white" : "text-[var(--text-muted)] hover:bg-[var(--bg)]"}`}
                         title="Ver historial de precios"
                       >
-                        {isExpanded ? <TrendingDown size={16} /> : <TrendingUp size={16} />}
+                        {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
                       </button>
                       <button
                         onClick={() => toggleAlert(fav.id)}
                         className={`p-2 rounded-lg transition-colors ${
                           alert?.is_active ? "bg-[var(--savings)] text-white" : "text-[var(--text-muted)] hover:bg-[var(--bg)]"
                         }`}
-                        title={alert?.is_active ? "Desactivar alerta" : "Activar alerta de precio"}
+                        title={alert?.is_active
+                          ? "Alerta activa: te avisamos si baja 5% o mas"
+                          : "Activar alerta: te avisamos cuando baje el precio"
+                        }
                       >
                         {alert?.is_active ? <Bell size={16} /> : <BellOff size={16} />}
                       </button>
@@ -236,6 +285,16 @@ export default function FavoritosPage() {
                     </div>
                   </div>
 
+                  {/* Alerta info inline */}
+                  {alert?.is_active && (
+                    <div className="px-4 pb-2 -mt-1">
+                      <p className="text-[11px] text-[var(--savings)] flex items-center gap-1">
+                        <Bell size={10} />
+                        Alerta activa: te notificamos por email si el precio total baja 5% o mas
+                      </p>
+                    </div>
+                  )}
+
                   {/* Historial expandido */}
                   {isExpanded && (
                     <div className="border-t border-[var(--border)] p-4 bg-[var(--bg)]">
@@ -246,44 +305,96 @@ export default function FavoritosPage() {
                         </div>
                       ) : history.length === 0 ? (
                         <p className="text-[13px] text-[var(--text-muted)]">
-                          Sin datos de historial todavia. Los precios se registran cada 6 horas.
+                          Sin datos todavia. Los precios se registran cada 6 horas automaticamente.
                         </p>
                       ) : (
                         <div>
-                          <p className="text-[12px] font-semibold text-[var(--text-secondary)] mb-3">Historial de precios (7 dias)</p>
-                          <div className="flex flex-col gap-2">
-                            {history.slice(-10).map((s, i) => {
-                              const prev = i > 0 ? history[i - 1] : null;
-                              const diff = prev ? s.total - prev.total : 0;
-                              return (
-                                <div key={i} className="flex items-center justify-between text-[13px]">
-                                  <div className="flex items-center gap-2">
-                                    <span
-                                      className="w-2 h-2 rounded-full"
-                                      style={{ background: s.platform === "rappi" ? "#FF441F" : "#06C167" }}
-                                    />
-                                    <span className="text-[var(--text-muted)]">
-                                      {new Date(s.sampled_at).toLocaleDateString("es-MX", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
-                                    </span>
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    <span className="font-semibold text-[var(--text-primary)]">${s.total.toFixed(0)}</span>
-                                    {diff !== 0 && (
-                                      <span className={`flex items-center gap-0.5 text-[11px] font-bold ${diff < 0 ? "text-[var(--savings)]" : "text-red-500"}`}>
-                                        {diff < 0 ? <TrendingDown size={12} /> : <TrendingUp size={12} />}
-                                        ${Math.abs(diff).toFixed(0)}
-                                      </span>
-                                    )}
-                                    {diff === 0 && prev && (
-                                      <span className="flex items-center gap-0.5 text-[11px] text-[var(--text-muted)]">
-                                        <Minus size={12} />
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-                              );
-                            })}
+                          <p className="text-[12px] font-semibold text-[var(--text-secondary)] mb-3">
+                            Historial de precios (ultimos 7 dias)
+                          </p>
+
+                          {/* Tabla de historial */}
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-[12px]">
+                              <thead>
+                                <tr className="text-[var(--text-muted)] text-left border-b border-[var(--border)]">
+                                  <th className="pb-2 font-medium">Fecha</th>
+                                  <th className="pb-2 font-medium text-right" style={{ color: "#FF441F" }}>Rappi</th>
+                                  <th className="pb-2 font-medium text-right" style={{ color: "#06C167" }}>Uber Eats</th>
+                                  <th className="pb-2 font-medium text-right">Mas barato</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {grouped.slice(0, 14).map((g, i) => {
+                                  const rappiTotal = g.rappi?.total ?? null;
+                                  const ueTotal = g.ubereats?.total ?? null;
+                                  let cheaper: string | null = null;
+                                  if (rappiTotal !== null && ueTotal !== null) {
+                                    if (rappiTotal < ueTotal) cheaper = "rappi";
+                                    else if (ueTotal < rappiTotal) cheaper = "ubereats";
+                                    else cheaper = "igual";
+                                  }
+
+                                  return (
+                                    <tr key={i} className="border-b border-[var(--border)] last:border-0">
+                                      <td className="py-2 text-[var(--text-muted)] whitespace-nowrap">
+                                        {formatDate(g.time)}
+                                      </td>
+                                      <td className="py-2 text-right">
+                                        {g.rappi ? (
+                                          <div>
+                                            <span className={`font-semibold ${cheaper === "rappi" ? "text-[var(--savings)]" : "text-[var(--text-primary)]"}`}>
+                                              ${g.rappi.total.toFixed(0)}
+                                            </span>
+                                            <div className="text-[10px] text-[var(--text-muted)]">
+                                              prod ${g.rappi.product_price.toFixed(0)} + envio ${(g.rappi.delivery_fee ?? 0).toFixed(0)}
+                                            </div>
+                                          </div>
+                                        ) : (
+                                          <span className="text-[var(--text-muted)]">-</span>
+                                        )}
+                                      </td>
+                                      <td className="py-2 text-right">
+                                        {g.ubereats ? (
+                                          <div>
+                                            <span className={`font-semibold ${cheaper === "ubereats" ? "text-[var(--savings)]" : "text-[var(--text-primary)]"}`}>
+                                              ${g.ubereats.total.toFixed(0)}
+                                            </span>
+                                            <div className="text-[10px] text-[var(--text-muted)]">
+                                              prod ${g.ubereats.product_price.toFixed(0)} + envio ${(g.ubereats.delivery_fee ?? 0).toFixed(0)}
+                                            </div>
+                                          </div>
+                                        ) : (
+                                          <span className="text-[var(--text-muted)]">-</span>
+                                        )}
+                                      </td>
+                                      <td className="py-2 text-right">
+                                        {cheaper === "rappi" && (
+                                          <span className="text-[11px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "#FF441F22", color: "#FF441F" }}>
+                                            Rappi -${((ueTotal ?? 0) - (rappiTotal ?? 0)).toFixed(0)}
+                                          </span>
+                                        )}
+                                        {cheaper === "ubereats" && (
+                                          <span className="text-[11px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "#06C16722", color: "#06C167" }}>
+                                            Uber -${((rappiTotal ?? 0) - (ueTotal ?? 0)).toFixed(0)}
+                                          </span>
+                                        )}
+                                        {cheaper === "igual" && (
+                                          <span className="text-[11px] text-[var(--text-muted)]">Igual</span>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
                           </div>
+
+                          {grouped.length > 14 && (
+                            <p className="text-[11px] text-[var(--text-muted)] mt-2 text-center">
+                              Mostrando los ultimos 14 registros de {grouped.length}
+                            </p>
+                          )}
                         </div>
                       )}
                     </div>

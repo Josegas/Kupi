@@ -72,9 +72,14 @@ export default function Buscar() {
   }, [locationKey]);
 
 
-  // Debounced search
+  // Debounced search with AbortController to cancel stale requests
+  const abortRef = useRef<AbortController | null>(null);
+
   useEffect(() => {
     const q = search.trim();
+
+    // Cancelar cualquier búsqueda anterior en vuelo
+    if (abortRef.current) abortRef.current.abort();
 
     // Persist to sessionStorage
     if (q) {
@@ -91,17 +96,21 @@ export default function Buscar() {
     if (q === lastSearchedRef.current && searchResults.length > 0) return;
 
     setSearching(true);
+    setSearchResults([]); // Limpiar resultados anteriores inmediatamente
+    const controller = new AbortController();
+    abortRef.current = controller;
     const timer = setTimeout(() => {
       lastSearchedRef.current = q;
       searchRestaurants(q, location.lat, location.lng)
         .then((results) => {
+          if (controller.signal.aborted) return; // Ignorar si ya se canceló
           setSearchResults(results);
           sessionStorage.setItem("kupi-search-results", JSON.stringify(results));
         })
-        .catch(() => setSearchResults([]))
-        .finally(() => setSearching(false));
+        .catch(() => { if (!controller.signal.aborted) setSearchResults([]); })
+        .finally(() => { if (!controller.signal.aborted) setSearching(false); });
     }, 400);
-    return () => clearTimeout(timer);
+    return () => { clearTimeout(timer); controller.abort(); };
   }, [search, locationKey]);
 
   // Category click → trigger search

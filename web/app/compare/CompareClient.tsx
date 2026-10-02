@@ -5,7 +5,9 @@ import { ArrowLeft, RefreshCw, MapPin, Search, Heart, Bell, LogOut } from "lucid
 import Link from "next/link";
 import PlatformCompareCard from "../components/PlatformCompareCard";
 import CTAButton from "../components/CTAButton";
-import { compareProducts, fetchCombinedMenu, proxyImage, QuoteResponse, CombinedProduct, ExclusiveProduct } from "../lib/api";
+import { compareProducts, fetchCombinedMenu, proxyImage, QuoteResponse } from "../lib/api";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 import { RestaurantConfig } from "../lib/restaurants";
 import { useLocation } from "../lib/location";
 import { useLang } from "../lib/i18n";
@@ -76,18 +78,21 @@ interface ListProduct {
 export default function CompareClient({ restaurant }: Props) {
   const { location } = useLocation();
   const { t } = useLang();
-  const { user, signOut } = useAuth();
+  const { user, session, signOut } = useAuth();
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
   const searchParams = useSearchParams();
   const preselectRappi = searchParams.get("r");
   const preselectUE = searchParams.get("u");
-  const fromDeals = preselectRappi !== null || preselectUE !== null;
+  const fromParam = searchParams.get("from"); // "fav" si viene de favoritos
+  const hasPreselect = preselectRappi !== null || preselectUE !== null;
+  const fromDeals = hasPreselect && fromParam !== "fav";
+  const fromFavorites = fromParam === "fav";
   const autoSelectedRef = useRef(false);
 
   // — Paso 1: selección de producto —
   // Si vienen parámetros de preselección, saltar directo a comparación
-  const [step, setStep] = useState<Step>(fromDeals ? "comparing" : "selecting");
+  const [step, setStep] = useState<Step>((fromDeals || fromFavorites) ? "comparing" : "selecting");
   const [allProducts, setAllProducts] = useState<ListProduct[]>([]);
   const [loadingMenu, setLoadingMenu] = useState(true);
   const [menuError, setMenuError] = useState<string | null>(null);
@@ -95,9 +100,34 @@ export default function CompareClient({ restaurant }: Props) {
   const [platformFilter, setPlatformFilter] = useState<"all" | "both" | "rappi" | "ubereats">("all");
   const [selectedProduct, setSelectedProduct] = useState<ListProduct | null>(null);
 
+  // — Favoritos del usuario (para resaltar y ordenar) —
+  const [favProductIds, setFavProductIds] = useState<Set<string>>(new Set());
+  const [showFavOnly, setShowFavOnly] = useState(false);
+
+  useEffect(() => {
+    if (!user || !session) return;
+    fetch(`${API_URL}/favorites`, {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    })
+      .then((r) => r.ok ? r.json() : [])
+      .then((favs: { rappi_product_id?: string; ubereats_product_id?: string }[]) => {
+        const ids = new Set<string>();
+        for (const f of favs) {
+          if (f.rappi_product_id) ids.add(f.rappi_product_id);
+          if (f.ubereats_product_id) ids.add(f.ubereats_product_id);
+        }
+        setFavProductIds(ids);
+      })
+      .catch(() => {});
+  }, [user, session]);
+
+  const isFavorite = (p: ListProduct) =>
+    (p.rappi_product_id && favProductIds.has(p.rappi_product_id)) ||
+    (p.ubereats_product_id && favProductIds.has(p.ubereats_product_id));
+
   // — Paso 2: comparación de precios —
   const [quotes, setQuotes] = useState<QuoteResponse[]>([]);
-  const [loadingQuotes, setLoadingQuotes] = useState(fromDeals);
+  const [loadingQuotes, setLoadingQuotes] = useState(hasPreselect);
   const [quotesError, setQuotesError] = useState<string | null>(null);
   const [selectedQuote, setSelectedQuote] = useState<QuoteResponse | null>(null);
 
@@ -117,6 +147,10 @@ export default function CompareClient({ restaurant }: Props) {
           ...data.only_ubereats.map((p) => ({ ...p, exclusivePlatform: "ubereats" as const })),
         ];
         const merged = [...matched, ...exclusive].sort((a, b) => {
+          // 0. Favoritos primero
+          const aFav = isFavorite(a) ? 0 : 1;
+          const bFav = isFavorite(b) ? 0 : 1;
+          if (aFav !== bFav) return aFav - bFav;
           // 1. Productos con imagen primero
           const aImg = a.image_url ? 0 : 1;
           const bImg = b.image_url ? 0 : 1;
@@ -197,7 +231,8 @@ export default function CompareClient({ restaurant }: Props) {
       (platformFilter === "both" && !p.exclusivePlatform) ||
       (platformFilter === "rappi" && p.exclusivePlatform === "rappi") ||
       (platformFilter === "ubereats" && p.exclusivePlatform === "ubereats");
-    return matchesSearch && matchesPlatform;
+    const matchesFav = !showFavOnly || isFavorite(p);
+    return matchesSearch && matchesPlatform && matchesFav;
   });
 
   const cheapest = quotes[0] ?? null;
@@ -221,7 +256,7 @@ export default function CompareClient({ restaurant }: Props) {
             </button>
           )
         ) : (
-          <Link href="/buscar" className="kupi-link text-[var(--text-secondary)] transition-colors shrink-0">
+          <Link href={fromFavorites ? "/favoritos" : "/buscar"} className="kupi-link text-[var(--text-secondary)] transition-colors shrink-0">
             <ArrowLeft size={20} />
           </Link>
         )}
@@ -355,6 +390,20 @@ export default function CompareClient({ restaurant }: Props) {
                   {label}
                 </button>
               ))}
+              {/* Filtro de favoritos */}
+              {user && favProductIds.size > 0 && (
+                <button
+                  onClick={() => setShowFavOnly(!showFavOnly)}
+                  className="text-[12px] font-semibold px-3 py-1.5 rounded-full border transition-colors flex items-center gap-1"
+                  style={
+                    showFavOnly
+                      ? { background: "var(--brand)", color: "#fff", borderColor: "var(--brand)" }
+                      : { background: "var(--surface)", color: "var(--text-secondary)", borderColor: "var(--border)" }
+                  }
+                >
+                  <Heart size={11} /> Favoritos
+                </button>
+              )}
             </div>
           )}
 
