@@ -867,6 +867,11 @@ def compare(request: Request, req: CompareRequest):
     if not quotes:
         raise HTTPException(status_code=502, detail={"errors": errors})
 
+    # Filtrar plataformas cerradas/no disponibles si hay al menos una abierta
+    open_quotes = [q for q in quotes if q.is_open]
+    if open_quotes:
+        quotes = open_quotes
+
     # Ordenar por total; DiDi va al final si su total es parcial (sin envío)
     quotes.sort(key=lambda q: q.total)
     return [QuoteResponse(**q.__dict__) for q in quotes]

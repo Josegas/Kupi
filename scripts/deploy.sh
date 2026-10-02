@@ -183,6 +183,7 @@ selected = {
     "SUPABASE_URL": env_vars.get("SUPABASE_URL", ""),
     "SUPABASE_SECRET_KEY": env_vars.get("SUPABASE_SECRET_KEY", ""),
     "CORS_ORIGINS": env_vars.get("CORS_ORIGINS", "*"),
+    "RESEND_API_KEY": env_vars.get("RESEND_API_KEY", ""),
 }
 
 total = sum(len(k) + len(v) for k, v in selected.items())

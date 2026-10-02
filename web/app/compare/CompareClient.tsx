@@ -103,6 +103,7 @@ export default function CompareClient({ restaurant }: Props) {
   // — Favoritos del usuario (para resaltar y ordenar) —
   const [favProductIds, setFavProductIds] = useState<Set<string>>(new Set());
   const [showFavOnly, setShowFavOnly] = useState(false);
+  const [availablePlatforms, setAvailablePlatforms] = useState<{ rappi: boolean; ubereats: boolean }>({ rappi: !!restaurant.rappi_store_id, ubereats: !!restaurant.ubereats_store_id });
 
   useEffect(() => {
     if (!user || !session) return;
@@ -146,6 +147,10 @@ export default function CompareClient({ restaurant }: Props) {
           ...data.only_rappi.map((p) => ({ ...p, exclusivePlatform: "rappi" as const })),
           ...data.only_ubereats.map((p) => ({ ...p, exclusivePlatform: "ubereats" as const })),
         ];
+        // Detectar qué plataformas realmente tienen productos
+        const hasRappi = matched.some((p) => p.rappi_product_id) || data.only_rappi.length > 0;
+        const hasUber = matched.some((p) => p.ubereats_product_id) || data.only_ubereats.length > 0;
+        setAvailablePlatforms({ rappi: hasRappi, ubereats: hasUber });
         const merged = [...matched, ...exclusive].sort((a, b) => {
           // 0. Favoritos primero
           const aFav = isFavorite(a) ? 0 : 1;
@@ -279,10 +284,10 @@ export default function CompareClient({ restaurant }: Props) {
               {restaurant.name}
             </span>
             <div className="flex items-center gap-1 shrink-0">
-              {restaurant.rappi_store_id && (
+              {availablePlatforms.rappi && (
                 <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "#FF441F22", color: "#FF441F" }}>Rappi</span>
               )}
-              {restaurant.ubereats_store_id && (
+              {availablePlatforms.ubereats && (
                 <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "#06C16722", color: "#06C167" }}>Uber Eats</span>
               )}
             </div>

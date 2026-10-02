@@ -74,6 +74,10 @@ class RappiConnector(BaseConnector):
 
     def fetch_menu(self, store_id: str, lat: float, lng: float) -> list[Product]:
         data = self._fetch_store(store_id, lat, lng)
+        # Si la tienda no está disponible para delivery, no devolver productos
+        if data.get("status") != "OPEN":
+            logger.info("Rappi store %s no disponible (status=%s)", store_id, data.get("status"))
+            return []
         products = []
         for corridor in data.get("corridors", []):
             for p in corridor.get("products", []):
