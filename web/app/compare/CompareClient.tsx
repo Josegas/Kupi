@@ -324,7 +324,7 @@ export default function CompareClient({ restaurant }: Props) {
                   className="flex items-center gap-2 px-4 py-2.5 text-[13px] text-[var(--text-primary)] hover:bg-[var(--bg)] transition-colors"
                 >
                   <Heart size={14} />
-                  Mis favoritos
+                  {t.auth.myFavorites}
                 </Link>
                 <Link
                   href="/favoritos"
@@ -332,14 +332,14 @@ export default function CompareClient({ restaurant }: Props) {
                   className="flex items-center gap-2 px-4 py-2.5 text-[13px] text-[var(--text-primary)] hover:bg-[var(--bg)] transition-colors"
                 >
                   <Bell size={14} />
-                  Mis alertas
+                  {t.auth.myAlerts}
                 </Link>
                 <button
                   onClick={() => { signOut(); setUserMenuOpen(false); }}
                   className="w-full flex items-center gap-2 px-4 py-2.5 text-[13px] text-red-500 hover:bg-[var(--bg)] transition-colors border-t border-[var(--border)]"
                 >
                   <LogOut size={14} />
-                  Cerrar sesion
+                  {t.auth.signOut}
                 </button>
               </div>
             )}
@@ -349,7 +349,7 @@ export default function CompareClient({ restaurant }: Props) {
             href="/login"
             className="shrink-0 text-[13px] font-semibold text-white bg-[var(--brand)] px-4 py-1.5 rounded-full hover:brightness-110 transition-all"
           >
-            Iniciar sesion
+            {t.auth.signIn}
           </Link>
         )}
       </div>

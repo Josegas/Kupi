@@ -1,10 +1,13 @@
 "use client";
-import { useState, useEffect } from "react";
-import { ArrowLeft, Heart, Trash2, Bell, BellOff, TrendingDown, TrendingUp, ChevronDown, ChevronUp, ExternalLink } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { ArrowLeft, Heart, Trash2, Bell, BellOff, TrendingDown, TrendingUp, ChevronDown, ChevronUp, ExternalLink, LogOut } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import KupiLogo from "../components/KupiLogo";
+import ThemeToggle from "../components/ThemeToggle";
+import LanguageToggle from "../components/LanguageToggle";
 import { useAuth } from "../lib/auth";
+import { useLang } from "../lib/i18n";
 import { proxyImage } from "../lib/api";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -72,15 +75,30 @@ function groupByTime(snapshots: PriceSnapshot[]): { time: string; rappi: PriceSn
     .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime()); // más reciente primero
 }
 
-function formatDate(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleDateString("es-MX", { day: "numeric", month: "short" }) +
-    ", " + d.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" });
-}
-
 export default function FavoritosPage() {
-  const { user, session, loading: authLoading } = useAuth();
+  const { user, session, signOut, loading: authLoading } = useAuth();
+  const { lang, t } = useLang();
   const router = useRouter();
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
+
+  const formatDate = (iso: string): string => {
+    const locale = lang === "en" ? "en-US" : "es-MX";
+    const d = new Date(iso);
+    return d.toLocaleDateString(locale, { day: "numeric", month: "short" }) +
+      ", " + d.toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
+  };
+
+  // Cerrar menú de usuario al hacer click fuera
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
+        setUserMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
   const [favorites, setFavorites] = useState<Favorite[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [loading, setLoading] = useState(true);
@@ -187,9 +205,39 @@ export default function FavoritosPage() {
             <KupiLogo size={110} imageSrc="/Kupilogo6.png" />
           </Link>
           <div className="w-px h-6 bg-[var(--border)]" />
-          <h1 className="text-[16px] font-semibold text-[var(--text-primary)]" style={{ fontFamily: "var(--font-display)" }}>
-            Mis favoritos
+          <h1 className="text-[16px] font-semibold text-[var(--text-primary)] flex-1" style={{ fontFamily: "var(--font-display)" }}>
+            {t.favoritos.title}
           </h1>
+
+          <LanguageToggle />
+          <ThemeToggle />
+
+          {user && (
+            <div className="relative shrink-0" ref={userMenuRef}>
+              <button
+                onClick={() => setUserMenuOpen(!userMenuOpen)}
+                className="w-8 h-8 rounded-full bg-[var(--brand-tint)] flex items-center justify-center"
+              >
+                <span className="text-xs font-semibold text-[var(--brand)]">
+                  {(user.email?.[0] ?? "U").toUpperCase()}
+                </span>
+              </button>
+              {userMenuOpen && (
+                <div className="absolute right-0 top-full mt-2 w-48 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-lg overflow-hidden z-50">
+                  <p className="px-4 py-2 text-[11px] text-[var(--text-muted)] truncate border-b border-[var(--border)]">
+                    {user.email}
+                  </p>
+                  <button
+                    onClick={() => { signOut(); setUserMenuOpen(false); }}
+                    className="w-full flex items-center gap-2 px-4 py-2.5 text-[13px] text-red-500 hover:bg-[var(--bg)] transition-colors"
+                  >
+                    <LogOut size={14} />
+                    {lang === "en" ? "Sign out" : "Cerrar sesión"}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -203,15 +251,15 @@ export default function FavoritosPage() {
         ) : favorites.length === 0 ? (
           <div className="text-center py-20">
             <Heart size={40} className="text-[var(--text-muted)] mx-auto mb-4" />
-            <h2 className="text-[18px] font-semibold text-[var(--text-primary)] mb-2">Sin favoritos todavia</h2>
+            <h2 className="text-[18px] font-semibold text-[var(--text-primary)] mb-2">{t.favoritos.empty}</h2>
             <p className="text-[14px] text-[var(--text-muted)] mb-6">
-              Busca un restaurante, elige un producto y toca el corazon para guardarlo
+              {t.favoritos.emptyHint}
             </p>
             <Link
               href="/buscar"
               className="kupi-btn inline-block bg-[var(--brand)] text-white font-semibold text-[14px] rounded-xl px-6 py-3"
             >
-              Buscar restaurantes
+              {t.favoritos.searchButton}
             </Link>
           </div>
         ) : (
@@ -231,7 +279,7 @@ export default function FavoritosPage() {
                       {fav.image_url ? (
                         <img src={proxyImage(fav.image_url)} alt={fav.product_name} className="w-full h-full object-cover" />
                       ) : (
-                        <div className="w-full h-full flex items-center justify-center text-[var(--text-muted)] text-[10px]">Sin img</div>
+                        <div className="w-full h-full flex items-center justify-center text-[var(--text-muted)] text-[10px]">{t.favoritos.noImage}</div>
                       )}
                     </a>
 
@@ -249,7 +297,7 @@ export default function FavoritosPage() {
                           <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "#06C16722", color: "#06C167" }}>Uber Eats</span>
                         )}
                         <span className="text-[10px] text-[var(--brand)] flex items-center gap-0.5 ml-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          Comparar <ExternalLink size={10} />
+                          {t.favoritos.compare} <ExternalLink size={10} />
                         </span>
                       </div>
                     </a>
@@ -259,7 +307,7 @@ export default function FavoritosPage() {
                       <button
                         onClick={() => loadHistory(fav.id)}
                         className={`p-2 rounded-lg transition-colors ${isExpanded ? "bg-[var(--brand)] text-white" : "text-[var(--text-muted)] hover:bg-[var(--bg)]"}`}
-                        title="Ver historial de precios"
+                        title={t.favoritos.historyTitle2}
                       >
                         {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
                       </button>
@@ -269,8 +317,8 @@ export default function FavoritosPage() {
                           alert?.is_active ? "bg-[var(--savings)] text-white" : "text-[var(--text-muted)] hover:bg-[var(--bg)]"
                         }`}
                         title={alert?.is_active
-                          ? "Alerta activa: te avisamos si baja 5% o mas"
-                          : "Activar alerta: te avisamos cuando baje el precio"
+                          ? t.favoritos.alertActiveShort
+                          : t.favoritos.alertActivate
                         }
                       >
                         {alert?.is_active ? <Bell size={16} /> : <BellOff size={16} />}
@@ -278,7 +326,7 @@ export default function FavoritosPage() {
                       <button
                         onClick={() => removeFavorite(fav.id)}
                         className="p-2 rounded-lg text-[var(--text-muted)] hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors"
-                        title="Quitar de favoritos"
+                        title={t.favoritos.removeTitle}
                       >
                         <Trash2 size={16} />
                       </button>
@@ -290,7 +338,7 @@ export default function FavoritosPage() {
                     <div className="px-4 pb-2 -mt-1">
                       <p className="text-[11px] text-[var(--savings)] flex items-center gap-1">
                         <Bell size={10} />
-                        Alerta activa: te notificamos por email si el precio total baja 5% o mas
+                        {t.favoritos.alertActive}
                       </p>
                     </div>
                   )}
@@ -301,16 +349,16 @@ export default function FavoritosPage() {
                       {loadingHistory ? (
                         <div className="flex items-center gap-2 text-[13px] text-[var(--text-muted)]">
                           <div className="w-4 h-4 border-2 border-[var(--brand)] border-t-transparent rounded-full animate-spin" />
-                          Cargando historial...
+                          {t.favoritos.loadingHistory}
                         </div>
                       ) : history.length === 0 ? (
                         <p className="text-[13px] text-[var(--text-muted)]">
-                          Sin datos todavia. Los precios se registran cada 6 horas automaticamente.
+                          {t.favoritos.historyEmpty}
                         </p>
                       ) : (
                         <div>
                           <p className="text-[12px] font-semibold text-[var(--text-secondary)] mb-3">
-                            Historial de precios (ultimos 7 dias)
+                            {t.favoritos.historyTitle}
                           </p>
 
                           {/* Tabla de historial */}
@@ -318,10 +366,10 @@ export default function FavoritosPage() {
                             <table className="w-full text-[12px]">
                               <thead>
                                 <tr className="text-[var(--text-muted)] text-left border-b border-[var(--border)]">
-                                  <th className="pb-2 font-medium">Fecha</th>
+                                  <th className="pb-2 font-medium">{t.favoritos.date}</th>
                                   <th className="pb-2 font-medium text-right" style={{ color: "#FF441F" }}>Rappi</th>
                                   <th className="pb-2 font-medium text-right" style={{ color: "#06C167" }}>Uber Eats</th>
-                                  <th className="pb-2 font-medium text-right">Mas barato</th>
+                                  <th className="pb-2 font-medium text-right">{t.favoritos.cheaper}</th>
                                 </tr>
                               </thead>
                               <tbody>
@@ -347,7 +395,7 @@ export default function FavoritosPage() {
                                               ${g.rappi.total.toFixed(0)}
                                             </span>
                                             <div className="text-[10px] text-[var(--text-muted)]">
-                                              prod ${g.rappi.product_price.toFixed(0)} + envio ${(g.rappi.delivery_fee ?? 0).toFixed(0)}
+                                              {t.favoritos.product} ${g.rappi.product_price.toFixed(0)} + {t.favoritos.delivery} ${(g.rappi.delivery_fee ?? 0).toFixed(0)}
                                             </div>
                                           </div>
                                         ) : (
@@ -361,7 +409,7 @@ export default function FavoritosPage() {
                                               ${g.ubereats.total.toFixed(0)}
                                             </span>
                                             <div className="text-[10px] text-[var(--text-muted)]">
-                                              prod ${g.ubereats.product_price.toFixed(0)} + envio ${(g.ubereats.delivery_fee ?? 0).toFixed(0)}
+                                              {t.favoritos.product} ${g.ubereats.product_price.toFixed(0)} + {t.favoritos.delivery} ${(g.ubereats.delivery_fee ?? 0).toFixed(0)}
                                             </div>
                                           </div>
                                         ) : (
@@ -380,7 +428,7 @@ export default function FavoritosPage() {
                                           </span>
                                         )}
                                         {cheaper === "igual" && (
-                                          <span className="text-[11px] text-[var(--text-muted)]">Igual</span>
+                                          <span className="text-[11px] text-[var(--text-muted)]">{t.favoritos.equal}</span>
                                         )}
                                       </td>
                                     </tr>
@@ -392,7 +440,7 @@ export default function FavoritosPage() {
 
                           {grouped.length > 14 && (
                             <p className="text-[11px] text-[var(--text-muted)] mt-2 text-center">
-                              Mostrando los ultimos 14 registros de {grouped.length}
+                              {t.favoritos.showing} 14 {t.favoritos.of} {grouped.length}
                             </p>
                           )}
                         </div>
